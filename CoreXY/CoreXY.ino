@@ -56,14 +56,16 @@ void setup() {
 
   calibration();
 
-  go({ MAX_X / 2, MAX_Y / 2 }, 2000);
-  go({ MAX_X, 0 }, 2000);
-  go({ MAX_X / 2, MAX_Y / 2 }, 2000);
-  go({ MAX_X, MAX_Y }, 2000);
-  go({ MAX_X / 2, MAX_Y / 2 }, 2000);
-  go({ 0, MAX_Y }, 2000);
-  go({ MAX_X / 2, MAX_Y / 2 }, 2000);
-  go({ 0, 0 }, 2000);
+  go({ 500, 0 });
+
+  // go({ MAX_X / 2, MAX_Y / 2 }, 2000);
+  // go({ MAX_X, 0 }, 2000);
+  // go({ MAX_X / 2, MAX_Y / 2 }, 2000);
+  // go({ MAX_X, MAX_Y }, 2000);
+  // go({ MAX_X / 2, MAX_Y / 2 }, 2000);
+  // go({ 0, MAX_Y }, 2000);
+  // go({ MAX_X / 2, MAX_Y / 2 }, 2000);
+  // go({ 0, 0 }, 2000);
 }
 
 void loop() {
@@ -126,16 +128,8 @@ void go(Vec dest, int speed) {
 
 /**
  * Move the core xy by a vector
- * Using a default speed
- *
- * @param diff is a vector which the core xy moves along in mm
- */
-void move (Vec diff) {
-  move(diff, default_speed);
-}
-
-/**
- * Move the core xy by a vector
+ * SHOULD NOT BE CALLED DIRECTLY
+ * Instead call go
  *
  * @param diff is a vector which the core xy moves along in mm
  * @param speed is the speed to move along the vector
