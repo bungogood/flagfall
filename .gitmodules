@@ -1,0 +1,3 @@
+[submodule "serial-communicator"]
+    path = serial-communicator
+    url  = "https://github.com/rubberhead/serial-communicator"
