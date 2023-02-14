@@ -3,6 +3,7 @@
 
 #define MAX_X 600
 #define MAX_Y 540
+#define SQRT2 1.41421356237
 
 #define HIGH_SPD 1000 
 #define LOW_SPD  300
@@ -24,8 +25,8 @@ const int default_speed = 1000;
 
 // stored in mm
 typedef struct Vec {
-  int x;
-  int y;
+  float x;
+  float y;
 } Vec;
 
 typedef struct StepperMotor {
@@ -55,21 +56,18 @@ void setup() {
   Serial.begin(9600);
 
   calibration();
-
-  go({ 500, 0 });
-
-  // go({ MAX_X / 2, MAX_Y / 2 }, 2000);
-  // go({ MAX_X, 0 }, 2000);
-  // go({ MAX_X / 2, MAX_Y / 2 }, 2000);
-  // go({ MAX_X, MAX_Y }, 2000);
-  // go({ MAX_X / 2, MAX_Y / 2 }, 2000);
-  // go({ 0, MAX_Y }, 2000);
-  // go({ MAX_X / 2, MAX_Y / 2 }, 2000);
-  // go({ 0, 0 }, 2000);
+  position({ 7, 7 });
 }
 
 void loop() {
 
+}
+
+void position(Vec pos) {
+  int ox = 0;
+  int oy = 0;
+  int scale = 48;
+  go({ ox + (pos.x * scale) + (scale / 2), oy + (pos.y * scale) + (scale / 2) });
 }
 
 /**
@@ -137,8 +135,8 @@ void go(Vec dest, int speed) {
 void move(Vec diff, int speed) {
   int interval = (int) 10000 / speed;
 
-  int dl = (int) (diff.x + diff.y) / 1.414;
-  int dr = (int) (diff.x - diff.y) / 1.414;
+  int dl = (int) (diff.x + diff.y) / SQRT2;
+  int dr = (int) (diff.x - diff.y) / SQRT2;
 
   // Enable the motor
   digitalWrite(ML.DISABLE_PIN, LOW);
@@ -151,7 +149,7 @@ void move(Vec diff, int speed) {
   StepperMotor continous, descrete;
 
   dl = abs(dl); dr = abs(dr);
-  float gradient = min(dl, dr) == 0 ? INT_MAX : max(dl, dr) / min(dl, dr);
+  double gradient = min(dl, dr) == 0 ? INT_MAX : max(dl, dr) / min(dl, dr);
   if (dl > dr) {
     continous = ML; descrete = MR;
   } else {
@@ -160,7 +158,7 @@ void move(Vec diff, int speed) {
 
   // Making move
   long steps = (long) dps * max(dl, dr);
-  float counter = 0;
+  double counter = 0;
 
   for (long i = 0; i < steps; i++) {
     counter++;
@@ -174,6 +172,8 @@ void move(Vec diff, int speed) {
     }
     delayMicroseconds(interval);
   }
+
+  delay(100);
 
   // Disable the motor
   digitalWrite(ML.DISABLE_PIN, HIGH);
