@@ -3,6 +3,8 @@
 #define HIGH_SPD 1000 
 #define LOW_SPD  300
 #define CALI_SPD 1500
+#define SPD_TO_INTERVAL(spd) (int) 10000 / spd
+#define MM_TO_STEPS(mm) (long) mm * 159
 
 #define UP         0
 #define DOWN       1
@@ -15,28 +17,34 @@
 
 #define LIMIT_SW_PIN A0
 
-
-//  --------
-// |        |
-// |        |
-// M1 ---- M2
-
+/* 
+*    --------
+*   |        |
+*   |        |
+*   M1 ---- M2
+*/
 
 typedef struct StepperMotor {
-    int DIR_PIN;
-    int STEP_PIN;
-    int DISABLE_PIN;
+    const int DIR_PIN;
+    const int STEP_PIN;
+    const int DISABLE_PIN;
 } StepperMotor;
 
-StepperMotor M1, M2;
+StepperMotor M1 = {4, 5, 12}, M2 = {7, 6, 8};
 
 
-void setup()
-{   
-    // Setting motor connection
-    M1.DIR_PIN = 4, M1.STEP_PIN = 5, M1.DISABLE_PIN = 12;
-    M2.DIR_PIN = 7, M2.STEP_PIN = 6, M2.DISABLE_PIN = 8;
+typedef struct Position {
+    int x;
+    int y;
+} Position;
 
+Position current_pos = {-1, -1};
+const int MAX_X = 600;
+const int MAX_Y = 600;
+const int MIN_X = 0;
+const int MIN_Y = 0;
+
+void setup() {   
     // Setting motor pins to output
     pinMode(M1.DIR_PIN, OUTPUT);
     pinMode(M1.STEP_PIN, OUTPUT);
@@ -49,26 +57,28 @@ void setup()
     // Senor
     pinMode(LIMIT_SW_PIN, INPUT);
 
-    // Enable the motors
-    digitalWrite(M1.DISABLE_PIN, LOW);
-    digitalWrite(M2.DISABLE_PIN, LOW);
+    // DisEnable the motors
+    digitalWrite(M1.DISABLE_PIN, HIGH);
+    digitalWrite(M2.DISABLE_PIN, HIGH);
 
     Serial.begin(9600);
-}
-void loop()
-{
-    // calibration();
-    // delay(10000);
-
-    move_in_dir(6400 * 2, HIGH_SPD, RIGHT);
-    move_in_dir(6400 * 2, HIGH_SPD, UP_RIGHT);
-    move_in_dir(6400 * 2, HIGH_SPD, UP);
-    move_in_dir(6400 * 2, HIGH_SPD, UP_LEFT);
-    move_in_dir(6400 * 2, HIGH_SPD, LEFT);
-    move_in_dir(6400 * 2, HIGH_SPD, DOWN_LEFT);
-    move_in_dir(6400 * 2, HIGH_SPD, DOWN);
-    move_in_dir(6400 * 2, HIGH_SPD, DOWN_RIGHT);
+    delay(3000);
+    calibration();
     delay(1000);
+    
+    move_to((Position) {5, 5}, LOW_SPD);
+    delay(1000);
+    move_to((Position) {100, 0}, HIGH_SPD);
+    delay(1000);
+    move_to((Position) {300, 200}, LOW_SPD);
+    delay(1000);
+    move_to((Position) {50, 0}, HIGH_SPD);
+    delay(1000);
+
+}
+
+
+void loop() {
 
 }
 
@@ -77,7 +87,7 @@ void calibration() {
     /*
     * Move to the DOWN LEFT corner
     */
-
+    Serial.println("CALIBRATING...");
     // Disable M2 so that it is not locked
     digitalWrite(M2.DISABLE_PIN, HIGH);
     // Enable M1 to rotate
@@ -103,37 +113,86 @@ void calibration() {
         digitalWrite(M1.STEP_PIN, HIGH);
         delayMicroseconds(interval);
     }
-        
+    delay(100);
     // Disable M1
     digitalWrite(M1.DISABLE_PIN, HIGH);
+
+    // Reset the current position
+    current_pos.x = 0;
+    current_pos.y = 0;
+    
+    Serial.println("DONE");
+
 }
 
 
-void move_single_motor(StepperMotor motor, int step, int speed, int direction) {
 
-    int interval = (int) 10000 / speed;
+void move_to(Position target_pos, int speed) {
+    // Print start position
+    Serial.print("[ ");
+    Serial.print(current_pos.x);
+    Serial.print(", ");
+    Serial.print(current_pos.y);
+    Serial.print(" ]");
 
-    digitalWrite(motor.DIR_PIN, direction);
 
-    // Enable the motor
-    digitalWrite(motor.DISABLE_PIN, LOW);
-    // Making move
-    for (int i = 0; i < step; i++) {
-        digitalWrite(motor.STEP_PIN, LOW);
-        delayMicroseconds(interval);
-        digitalWrite(motor.STEP_PIN, HIGH);
-        delayMicroseconds(interval);
+    // Check if the target position is valid
+    if (target_pos.x < MIN_X || target_pos.x > MAX_X || target_pos.y < MIN_Y || target_pos.y > MAX_Y) {
+        Serial.println("Invalid target position");
+        return;
     }
-    delay(10);
-    // Disable the motor
-    digitalWrite(motor.DISABLE_PIN, HIGH);
+    // Calibrate if not calibrated yet
+    if (current_pos.x == -1 && current_pos.y == -1) {
+        calibration();
+    }
+    // Calculate the distance to move
+    int dist_x = target_pos.x - current_pos.x;
+    int dist_y = target_pos.y - current_pos.y;
+
+    // First move in horizontal or vertical direction to align diagonally
+    int abs_hv_dist = abs(abs(dist_x) - abs(dist_y));
+    if (abs(dist_x) > abs(dist_y) && dist_x >= 0) {
+        move_mm_in_dir(abs_hv_dist, speed, RIGHT);
+    } else if (abs(dist_x) > abs(dist_y) && dist_x < 0) {
+        move_mm_in_dir(abs_hv_dist, speed, LEFT);
+    } else if (abs(dist_x) <= abs(dist_y) && dist_y >= 0) {
+        move_mm_in_dir(abs_hv_dist, speed, UP);
+    } else if (abs(dist_x) <= abs(dist_y) && dist_y < 0) {
+        move_mm_in_dir(abs_hv_dist, speed, DOWN);
+    }
+
+    // Then move diagonally to reach the target position
+    int abs_diag_dist = min(abs(dist_x), abs(dist_y));
+    if (dist_x >= 0 && dist_y >= 0) {
+        move_mm_in_dir(abs_diag_dist, speed, UP_RIGHT);
+    } else if (dist_x >= 0 && dist_y < 0) {
+        move_mm_in_dir(abs_diag_dist, speed, DOWN_RIGHT);
+    } else if (dist_x < 0 && dist_y >= 0) {
+        move_mm_in_dir(abs_diag_dist, speed, UP_LEFT);
+    } else if (dist_x < 0 && dist_y < 0) {
+        move_mm_in_dir(abs_diag_dist, speed, DOWN_LEFT);
+    }
+
+    // Update the current position
+    current_pos.x = target_pos.x;
+    current_pos.y = target_pos.y;
+
+    // Print the end position
+    Serial.print("\t-->    [ ");
+    Serial.print(current_pos.x);
+    Serial.print(", ");
+    Serial.print(current_pos.y);
+    Serial.println(" ]");
+
 }
 
 
-// Move 2 motors at the same time
-void move_in_dir(int step, int speed, int direction) {
-
-    int interval = (int) 10000 / speed;
+void move_mm_in_dir(int dist, int speed, int direction) {
+    /*
+    * Move the electromagnet in 8 main directions
+    */
+    long step = MM_TO_STEPS(dist);
+    int interval = SPD_TO_INTERVAL(speed);
     
     // Enable the motor
     digitalWrite(M1.DISABLE_PIN, LOW);
@@ -142,38 +201,49 @@ void move_in_dir(int step, int speed, int direction) {
     // Set up 8 moving directions
     switch (direction) {
         case UP:
+            current_pos.y += dist;
             digitalWrite(M1.DIR_PIN, LOW);
             digitalWrite(M2.DIR_PIN, HIGH);
             break;
         case DOWN:
+            current_pos.y -= dist;
             digitalWrite(M1.DIR_PIN, HIGH);
             digitalWrite(M2.DIR_PIN, LOW);
             break;
         case LEFT:
+            current_pos.x -= dist;
             digitalWrite(M1.DIR_PIN, HIGH);
             digitalWrite(M2.DIR_PIN, HIGH);  
             break; 
         case RIGHT:
+            current_pos.x += dist;
             digitalWrite(M1.DIR_PIN, LOW);
             digitalWrite(M2.DIR_PIN, LOW);
             break;
-
         case DOWN_RIGHT:
-            move_single_motor(M2, step, speed, LOW);
-            return 0;
+            current_pos.x += dist;
+            current_pos.y -= dist;
+            move_single_motor(M2, step * 2, speed, LOW);
+            return;
         case UP_RIGHT:
-            move_single_motor(M1, step, speed, LOW);
-            return 0;
+            current_pos.x += dist;
+            current_pos.y += dist;
+            move_single_motor(M1, step * 2, speed, LOW);
+            return;
         case DOWN_LEFT:
-            move_single_motor(M1, step, speed, HIGH);
-            return 0;
+            current_pos.x -= dist;
+            current_pos.y -= dist;
+            move_single_motor(M1, step * 2, speed, HIGH);
+            return;
         case UP_LEFT:
-            move_single_motor(M2, step, speed, HIGH);
-            return 0;
+            current_pos.x -= dist;
+            current_pos.y += dist;
+            move_single_motor(M2, step * 2, speed, HIGH);
+            return;
     }
 
     // Making move
-    for (int i = 0; i < step; i++) {
+    for (long i = 0; i < step; i++) {
         digitalWrite(M1.STEP_PIN, LOW);
         digitalWrite(M2.STEP_PIN, LOW);
         delayMicroseconds(interval);
@@ -181,8 +251,39 @@ void move_in_dir(int step, int speed, int direction) {
         digitalWrite(M2.STEP_PIN, HIGH);
         delayMicroseconds(interval);
     }
-
+    delay(10);
     // Disable the motor
     digitalWrite(M1.DISABLE_PIN, HIGH);
     digitalWrite(M2.DISABLE_PIN, HIGH);
 }
+
+
+void move_single_motor(StepperMotor motor, long step, int speed, bool direction) {
+    /*
+    * Move a single motor clockwise or counter-clockwise
+    *
+    * direction: LOW (0) for clockwise, HIGH (1) for counter-clockwise
+    */
+    int interval = (int) 10000 / speed;
+
+    // Enable the motors
+    digitalWrite(M1.DISABLE_PIN, LOW);
+    digitalWrite(M2.DISABLE_PIN, LOW);
+
+    // Set the direction
+    digitalWrite(motor.DIR_PIN, direction);
+
+    // Making move
+    for (long i = 0; i < step; i++) {
+        digitalWrite(motor.STEP_PIN, LOW);
+        delayMicroseconds(interval);
+        digitalWrite(motor.STEP_PIN, HIGH);
+        delayMicroseconds(interval);
+    }
+    delay(10);
+
+    // Disable the motors
+    digitalWrite(M1.DISABLE_PIN, HIGH);
+    digitalWrite(M2.DISABLE_PIN, HIGH);
+}
+
