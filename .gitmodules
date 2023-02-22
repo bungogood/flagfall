@@ -1,3 +1,6 @@
 [submodule "serial-communicator"]
 	path = serial-communicator
 	url = https://github.com/rubberhead/serial-communicator
+[submodule "lichess-connector"]
+	path = lichess-connector
+	url = https://github.com/cosmobobak/lichess-connector
