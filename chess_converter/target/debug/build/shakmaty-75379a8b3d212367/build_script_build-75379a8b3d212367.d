@@ -1,0 +1,12 @@
+c:\Users\cosmo\university\system-design-project\flagfall\chess_converter\target\debug\build\shakmaty-75379a8b3d212367\build_script_build-75379a8b3d212367.exe: C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src/build.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\bitboard.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\color.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\magics.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\role.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\square.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\types.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\util.rs
+
+c:\Users\cosmo\university\system-design-project\flagfall\chess_converter\target\debug\build\shakmaty-75379a8b3d212367\build_script_build-75379a8b3d212367.d: C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src/build.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\bitboard.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\color.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\magics.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\role.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\square.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\types.rs C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\util.rs
+
+C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src/build.rs:
+C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\bitboard.rs:
+C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\color.rs:
+C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\magics.rs:
+C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\role.rs:
+C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\square.rs:
+C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\types.rs:
+C:\Users\cosmo\.cargo\registry\src\github.com-1ecc6299db9ec823\shakmaty-0.23.1\src\util.rs:
