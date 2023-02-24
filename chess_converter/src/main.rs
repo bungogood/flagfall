@@ -1,9 +1,11 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
+#![allow(dead_code)]
 
 use shakmaty::{
     fen::Fen, san::San, Bitboard, CastlingMode, Chess, Color, File, Move, Position, Rank, Role,
     Square,
 };
+use std::fmt::Write;
 
 fn main() {
     //for now chess games are going to start from the beginning, this FEN is used for testing
@@ -14,13 +16,13 @@ fn main() {
     let mut pos: Chess = fen.into_position(CastlingMode::Standard).unwrap();
 
     let mut state = State::Idle;
-    print_board_from_fen(pos.board().to_string());
+    print_board_from_fen(&pos.board().to_string());
 
     // Right now the program is set to loop through the input from the reed switches ONLY
     loop {
         let mut line = String::new();
-        let newstate = state.clone();
-        let rgbstate = state.clone();
+        let newstate = state;
+        let rgbstate = state;
         print_state_name(state);
 
         // This is the output for LED MATRIX
@@ -30,15 +32,15 @@ fn main() {
         std::io::stdin().read_line(&mut line).unwrap();
         if line == "-1" {
             break;
-        } else {
-            let (_state, _move) = update_state(&pos, line.trim().parse::<u32>().unwrap(), newstate);
-            state = _state;
-            let copied_move = _move.clone();
-            let copied_pos = pos.clone();
-            if _move.is_some() {
-                pos = copied_pos.play(&copied_move.unwrap()).unwrap();
-                print_board_from_fen(pos.board().to_string());
-            }
+        }
+
+        let mv;
+        (state, mv) = update_state(&pos, line.trim().parse::<u32>().unwrap(), newstate);
+        let copiedmv = mv.clone();
+        let copied_pos = pos.clone();
+        if mv.is_some() {
+            pos = copied_pos.play(&copiedmv.unwrap()).unwrap();
+            print_board_from_fen(&pos.board().to_string());
         }
     }
 
@@ -48,145 +50,105 @@ fn main() {
     //TODO: make sure that moves coming from SAN are committed by using Chess.play()
 }
 
+#[allow(clippy::too_many_lines)]
 fn get_rgb(position: &Chess, state: State) -> RGB {
     let color = position.turn();
     let occupied = position.board().occupied();
     let enemies = position.them();
     match state {
-        State::Idle => {
-            let rgb = RGB {
-                r: Bitboard::EMPTY,
-                g: Bitboard::EMPTY,
-                b: Bitboard::EMPTY,
-            };
-            rgb
-        }
+        State::Idle => RGB {
+            r: Bitboard::EMPTY,
+            g: Bitboard::EMPTY,
+            b: Bitboard::EMPTY,
+        },
         State::FriendlyPU(square) => {
-            let mut can_move_to: Bitboard;
+            let mut canmv_to: Bitboard;
             let mut is_promotion: bool = false;
             if position.board().role_at(square).unwrap() == Role::Pawn {
-                let shift_direction: i32;
-                if color.is_white() {
-                    shift_direction = 1
-                } else {
-                    shift_direction = -1
-                }
-                can_move_to = Bitboard::from_square(square).shift(8 * shift_direction);
+                let shift_direction = if color.is_white() { 1 } else { -1 };
+                canmv_to = Bitboard::from_square(square).shift(8 * shift_direction);
                 if (square.rank() == Rank::Second && color.is_white()
                     || square.rank() == Rank::Seventh && color.is_black())
-                    && can_move_to.without(occupied).any()
+                    && canmv_to.without(occupied).any()
                 {
-                    can_move_to =
-                        can_move_to.with(Bitboard::from_square(square).shift(16 * shift_direction));
+                    canmv_to =
+                        canmv_to.with(Bitboard::from_square(square).shift(16 * shift_direction));
                 }
-                can_move_to = can_move_to.without(occupied);
+                canmv_to = canmv_to.without(occupied);
 
                 if (square.rank() == Rank::Second && color.is_black()
                     || square.rank() == Rank::Seventh && color.is_white())
-                    && can_move_to.without(occupied).any()
+                    && canmv_to.without(occupied).any()
                 {
                     is_promotion = true;
                 }
             } else {
-                can_move_to = position.board().attacks_from(square).without(occupied);
+                canmv_to = position.board().attacks_from(square).without(occupied);
             }
 
             let can_capture = position.board().attacks_from(square).intersect(enemies);
 
-            let rgb: RGB;
             if is_promotion {
-                rgb = RGB {
-                    r: can_move_to.with(can_capture),
+                RGB {
+                    r: canmv_to.with(can_capture),
                     g: can_capture,
-                    b: can_move_to,
-                };
+                    b: canmv_to,
+                }
             } else {
-                rgb = RGB {
+                RGB {
                     r: can_capture,
-                    g: can_move_to.with(can_capture),
+                    g: canmv_to.with(can_capture),
                     b: Bitboard::EMPTY,
-                };
+                }
             }
-            rgb
         }
         State::EnemyPU(square) => {
             let attackers = position.board().attacks_to(square, color, occupied);
-            let rgb = RGB {
+            RGB {
                 r: Bitboard::EMPTY,
                 g: attackers,
                 b: Bitboard::EMPTY,
-            };
-            rgb
-        }
-        State::FriendlyAndEnemyPU(_, enemy_square) => {
-            let rgb = RGB {
-                r: Bitboard::EMPTY,
-                g: Bitboard::from_square(enemy_square),
-                b: Bitboard::EMPTY,
-            };
-            rgb
-        }
-        State::Castling(_, rook_square) => {
-            let target_square: Square;
-            match color {
-                Color::White => {
-                    if rook_square == Square::A1 {
-                        target_square = Square::C1
-                    } else {
-                        target_square = Square::G1
-                    }
-                }
-                Color::Black => {
-                    if rook_square == Square::A8 {
-                        target_square = Square::C8
-                    } else {
-                        target_square = Square::G8
-                    }
-                }
             }
+        }
+        State::FriendlyAndEnemyPU(_, enemy_square) => RGB {
+            r: Bitboard::EMPTY,
+            g: Bitboard::from_square(enemy_square),
+            b: Bitboard::EMPTY,
+        },
+        State::Castling(_, rook_square) => {
+            let target_square = match (color, rook_square) {
+                (Color::White, Square::A1) => Square::C1,
+                (Color::White, _) => Square::G1,
+                (Color::Black, Square::A8) => Square::C8,
+                (Color::Black, _) => Square::G8,
+            };
 
-            let rgb = RGB {
+            RGB {
                 r: Bitboard::from_square(target_square),
                 g: Bitboard::EMPTY,
                 b: Bitboard::from_square(target_square),
-            };
-            rgb
+            }
         }
-        State::CastlingPutRookDown(_, _, target_square) => {
-            let rgb = RGB {
-                r: Bitboard::from_square(target_square),
-                g: Bitboard::EMPTY,
-                b: Bitboard::from_square(target_square),
-            };
-            rgb
-        }
-        State::InvalidPiecePU(_, square) => {
-            let rgb = RGB {
-                r: Bitboard::from_square(square),
-                g: Bitboard::EMPTY,
-                b: Bitboard::EMPTY,
-            };
-            rgb
-        }
-        State::InvalidMove(_, square) => {
-            let rgb = RGB {
-                r: Bitboard::from_square(square),
-                g: Bitboard::EMPTY,
-                b: Bitboard::EMPTY,
-            };
-            rgb
-        }
-        State::Error => {
-            let rgb = RGB {
-                r: Bitboard::FULL,
-                g: Bitboard::EMPTY,
-                b: Bitboard::EMPTY,
-            };
-            rgb
-        }
+        State::CastlingPutRookDown(_, _, target_square) => RGB {
+            r: Bitboard::from_square(target_square),
+            g: Bitboard::EMPTY,
+            b: Bitboard::from_square(target_square),
+        },
+        State::InvalidPiecePU(_, square) | State::InvalidMove(_, square) => RGB {
+            r: Bitboard::from_square(square),
+            g: Bitboard::EMPTY,
+            b: Bitboard::EMPTY,
+        },
+        State::Error => RGB {
+            r: Bitboard::FULL,
+            g: Bitboard::EMPTY,
+            b: Bitboard::EMPTY,
+        },
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct RGB {
     r: Bitboard,
     g: Bitboard,
@@ -199,6 +161,7 @@ fn print_rgb(rgb: RGB) {
     print_bitboard(rgb.b);
 }
 
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Option<Move>) {
     let color = position.turn();
     let square = Square::new(instruction);
@@ -233,11 +196,11 @@ fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Opt
                 && position.board().role_at(square).unwrap() == Role::King
             {
                 //castling
-                let _move = Move::Castle {
+                let mv = Move::Castle {
                     king: square,
                     rook: prev_square,
                 };
-                if position.is_legal(&_move) {
+                if position.is_legal(&mv) {
                     (State::Castling(square, prev_square), None)
                 } else {
                     (State::InvalidPiecePU(Some(prev_square), square), None)
@@ -247,11 +210,11 @@ fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Opt
                 && position.board().role_at(square).unwrap() == Role::Rook
             {
                 //castling
-                let _move = Move::Castle {
+                let mv = Move::Castle {
                     king: prev_square,
                     rook: square,
                 };
-                if position.is_legal(&_move) {
+                if position.is_legal(&mv) {
                     (State::Castling(prev_square, square), None)
                 } else {
                     (State::InvalidPiecePU(Some(prev_square), square), None)
@@ -266,7 +229,7 @@ fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Opt
                 && (square.rank() == Rank::First || square.rank() == Rank::Eighth)
             {
                 //promotions
-                let _move = Move::Normal {
+                let mv = Move::Normal {
                     role: (Role::Pawn),
                     from: (prev_square),
                     capture: (None),
@@ -274,18 +237,18 @@ fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Opt
                     promotion: (Some(Role::Queen)),
                 }; //Right now we're just assuming the player will promote to queen
                 println!("PROMOTED");
-                (State::Idle, Some(_move))
+                (State::Idle, Some(mv))
             } else {
-                let _move = Move::Normal {
+                let mv = Move::Normal {
                     role: (role_picked_up),
                     from: (prev_square),
                     capture: (None),
                     to: (square),
                     promotion: (None),
                 };
-                if position.is_legal(&_move) {
+                if position.is_legal(&mv) {
                     println!("MOVE COMMITTED");
-                    (State::Idle, Some(_move))
+                    (State::Idle, Some(mv))
                 } else {
                     (State::InvalidMove(prev_square, square), None)
                 }
@@ -325,23 +288,23 @@ fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Opt
                     && (square.rank() == Rank::First || square.rank() == Rank::Eighth)
                 {
                     println!("PROMOTED");
-                    let _move = Move::Normal {
+                    let mv = Move::Normal {
                         role: (role_picked_up),
                         from: (prev_friendly_square),
                         capture: (position.board().role_at(prev_enemy_square)),
                         to: (square),
                         promotion: (Some(Role::Queen)),
                     }; //assuming player will pick queen
-                    (State::Idle, Some(_move))
+                    (State::Idle, Some(mv))
                 } else {
-                    let _move = Move::Normal {
+                    let mv = Move::Normal {
                         role: (role_picked_up),
                         from: (prev_friendly_square),
                         capture: (position.board().role_at(prev_enemy_square)),
                         to: (square),
                         promotion: (None),
                     };
-                    (State::Idle, Some(_move))
+                    (State::Idle, Some(mv))
                 }
             } else {
                 (State::Error, None)
@@ -401,11 +364,11 @@ fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Opt
         }
         State::CastlingPutRookDown(king_square, rook_square, target_square) => {
             if square == target_square {
-                let _move = Move::Castle {
+                let mv = Move::Castle {
                     king: king_square,
                     rook: rook_square,
                 };
-                (State::Idle, Some(_move))
+                (State::Idle, Some(mv))
             } else {
                 (State::Error, None)
             }
@@ -432,7 +395,7 @@ fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Opt
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum State {
     Idle,
     FriendlyPU(Square),
@@ -459,121 +422,50 @@ fn print_state_name(state: State) {
     }
 }
 
-fn print_board_from_fen(fen: String) {
+fn print_board_from_fen(fen: &str) {
     let mut output: String = String::new();
     let mut counter = 0;
     output.push(' ');
     for c in fen.chars() {
         if counter == 8 {
             counter = 0;
-            output.push_str("\n");
+            output.push('\n');
         }
         match c {
-            'r' => {
-                output.push_str("r ");
-                counter += 1
+            c @ ('r' | 'R' | 'n' | 'N' | 'b' | 'B' | 'q' | 'Q' | 'k' | 'K' | 'p' | 'P') => {
+                write!(output, "{c} ").unwrap();
+                counter += 1;
             }
-            'R' => {
-                output.push_str("R ");
-                counter += 1
-            }
-            'n' => {
-                output.push_str("n ");
-                counter += 1
-            }
-            'N' => {
-                output.push_str("N ");
-                counter += 1
-            }
-            'b' => {
-                output.push_str("b ");
-                counter += 1
-            }
-            'B' => {
-                output.push_str("B ");
-                counter += 1
-            }
-            'q' => {
-                output.push_str("q ");
-                counter += 1
-            }
-            'Q' => {
-                output.push_str("Q ");
-                counter += 1
-            }
-            'k' => {
-                output.push_str("k ");
-                counter += 1
-            }
-            'K' => {
-                output.push_str("K ");
-                counter += 1
-            }
-            'p' => {
-                output.push_str("p ");
-                counter += 1
-            }
-            'P' => {
-                output.push_str("P ");
-                counter += 1
-            }
-            '1' => {
-                output.push_str(". ");
-                counter += 1
-            }
-            '2' => {
-                output.push_str(". . ");
-                counter += 2
-            }
-            '3' => {
-                output.push_str(". . . ");
-                counter += 3
-            }
-            '4' => {
-                output.push_str(". . . . ");
-                counter += 4
-            }
-            '5' => {
-                output.push_str(". . . . . ");
-                counter += 5
-            }
-            '6' => {
-                output.push_str(". . . . . . ");
-                counter += 6
-            }
-            '7' => {
-                output.push_str(". . . . . . . ");
-                counter += 7
-            }
-            '8' => {
-                output.push_str(". . . . . . . . ");
-                counter += 8
+            n @ '1'..='8' => {
+                let n = n.to_digit(10).unwrap();
+                for _ in 0..n {
+                    output.push_str(". ");
+                }
+                counter += n;
             }
             _ => {
                 output.push(' ');
-                counter += 0
+                counter += 0;
             }
         }
     }
-    println!("{}", output.as_str());
+    println!("{output}");
 }
 
 fn print_bitboard(bitboard: Bitboard) {
     let y = format!("{bitboard:064b}");
 
     let mut output: String = String::new();
-    let mut counter = 0;
     let mut line = String::new();
-    for a in y.chars() {
+    for (counter, a) in y.chars().enumerate() {
         if counter % 8 == 0 {
             output.push_str(line.chars().rev().collect::<String>().as_str());
             //print!("{}", line.as_str());
-            output.push_str("\n");
+            output.push('\n');
             line = String::new();
         }
         line.push(a);
         line.push(' ');
-        counter += 1;
     }
     output.push_str(line.chars().rev().collect::<String>().as_str());
     println!("{}", output.as_str());
@@ -581,142 +473,129 @@ fn print_bitboard(bitboard: Bitboard) {
 
 fn convert_san_to_steps(
     san: &str,
-    pos: Chess,
+    pos: &Chess,
     captured_blacks: f64,
     captured_whites: f64,
 ) -> Vec<Step> {
     let san: San = san.parse().unwrap();
 
     let current_color: Color = pos.turn();
-    let m = san.to_move(&pos).unwrap();
+    let m = san.to_move(pos).unwrap();
 
-    let steps: Vec<Step>;
-    steps = move_to_steps(m, current_color, captured_whites, captured_blacks);
-
-    return steps;
+    move_to_steps(m, current_color, captured_whites, captured_blacks)
 }
 
+#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 fn move_to_steps(
-    _move: Move,
+    mv: Move,
     current_color: Color,
     captured_whites: f64,
     captured_blacks: f64,
 ) -> Vec<Step> {
-    let mut steps: Vec<Step> = Vec::new();
+    #![allow(clippy::similar_names)]
+    let mut steps = Vec::new();
 
-    let from_x: f64 = file_to_float(_move.from().unwrap().file());
-    let from_y: f64 = rank_to_float(_move.from().unwrap().rank());
-    let to_x: f64 = file_to_float(_move.to().file());
-    let to_y: f64 = rank_to_float(_move.to().rank());
+    let from_x: f64 = file_to_float(mv.from().unwrap().file());
+    let from_y: f64 = rank_to_float(mv.from().unwrap().rank());
+    let to_x: f64 = file_to_float(mv.to().file());
+    let to_y: f64 = rank_to_float(mv.to().rank());
 
-    if _move.is_castle() {
+    if mv.is_castle() {
         //from = king, to = rook
-        let direction: f64;
-        let offset: f64;
-        let queenside_king: f64;
-        if current_color == Color::White {
-            direction = -0.5;
+        let direction = if current_color == Color::White {
+            -0.5
         } else {
-            direction = 0.5;
-        }
-        if to_x == 8.0 {
-            offset = -1.0;
-            queenside_king = 0.0;
+            0.5
+        };
+        let (offset, queenside_king) = if (to_x - 8.0).abs() < f64::EPSILON {
+            (-1.0, 0.0)
         } else {
-            offset = 1.0;
-            queenside_king = 1.0;
-        } // king side castling; else queen side castling
-        let engage: Step = Step {
-            x: (from_x),
-            y: (from_y),
-            magnet: (false),
-        };
+            (1.0, 1.0)
+        }; // king side castling; else queen side castling
+        steps.push(Step {
+            x: from_x,
+            y: from_y,
+            magnet: false,
+        });
 
-        let step1: Step = Step {
-            x: (to_x + offset + queenside_king),
-            y: (to_y),
-            magnet: (true),
-        };
+        steps.push(Step {
+            x: to_x + offset + queenside_king,
+            y: to_y,
+            magnet: true,
+        });
 
-        let step2: Step = Step {
-            x: (to_x),
-            y: (to_y),
-            magnet: (false),
-        };
+        steps.push(Step {
+            x: to_x,
+            y: to_y,
+            magnet: false,
+        });
 
-        let step3: Step = Step {
-            x: (to_x),
-            y: (to_y + direction),
-            magnet: (true),
-        };
+        steps.push(Step {
+            x: to_x,
+            y: to_y + direction,
+            magnet: true,
+        });
 
-        let step4: Step = Step {
-            x: (from_x - offset),
-            y: (to_y + direction),
-            magnet: (true),
-        };
+        steps.push(Step {
+            x: from_x - offset,
+            y: to_y + direction,
+            magnet: true,
+        });
 
-        let step5: Step = Step {
-            x: (from_x - offset),
-            y: (from_y),
-            magnet: (true),
-        };
+        steps.push(Step {
+            x: from_x - offset,
+            y: from_y,
+            magnet: true,
+        });
 
-        steps.push(engage);
-        steps.push(step1);
-        steps.push(step2);
-        steps.push(step3);
-        steps.push(step4);
-        steps.push(step5);
         return steps;
     }
 
-    if _move.is_en_passant() {
-        let offset: f64;
-        if current_color == Color::White {
-            offset = -1.0;
+    if mv.is_en_passant() {
+        let offset = if current_color == Color::White {
+            -1.0
         } else {
-            offset = 1.0;
-        }
-        let mut capture_moves: Vec<Step> = capture_piece(
+            1.0
+        };
+        let mut capturemvs: Vec<Step> = capture_piece(
             to_x,
             to_y + offset,
             current_color,
             captured_whites,
             captured_blacks,
         );
-        steps.append(&mut capture_moves);
+        steps.append(&mut capturemvs);
     }
 
-    if _move.is_capture() && !_move.is_en_passant() {
-        let mut capture_moves: Vec<Step> =
+    if mv.is_capture() && !mv.is_en_passant() {
+        let mut capturemvs: Vec<Step> =
             capture_piece(to_x, to_y, current_color, captured_whites, captured_blacks);
-        steps.append(&mut capture_moves);
+        steps.append(&mut capturemvs);
     }
 
     let engage: Step = Step {
-        x: (from_x),
-        y: (from_y),
-        magnet: (false),
+        x: from_x,
+        y: from_y,
+        magnet: false,
     };
 
     steps.push(engage);
 
-    if _move.role() == Role::Knight {
+    if mv.role() == Role::Knight {
         let step1: Step = Step {
-            x: ((from_x + to_x) / 2.0),
-            y: (from_y),
-            magnet: (true),
+            x: (from_x + to_x) / 2.0,
+            y: from_y,
+            magnet: true,
         };
         let step2: Step = Step {
-            x: ((from_x + to_x) / 2.0),
-            y: (to_y),
-            magnet: (true),
+            x: (from_x + to_x) / 2.0,
+            y: to_y,
+            magnet: true,
         };
         let step3: Step = Step {
-            x: (to_x),
-            y: (to_y),
-            magnet: (true),
+            x: to_x,
+            y: to_y,
+            magnet: true,
         };
 
         steps.push(step1);
@@ -726,14 +605,14 @@ fn move_to_steps(
     //move to position
     else {
         let step: Step = Step {
-            x: (to_x),
-            y: (to_y),
-            magnet: (true),
+            x: to_x,
+            y: to_y,
+            magnet: true,
         };
         steps.push(step);
     }
 
-    return steps;
+    steps
 }
 
 fn capture_piece(
@@ -744,17 +623,12 @@ fn capture_piece(
     captured_blacks: f64,
 ) -> Vec<Step> {
     let mut steps: Vec<Step> = Vec::new();
-    let engage: Step = Step {
-        x: (from_x),
-        y: (from_y),
-        magnet: (false),
-    };
+    steps.push(Step {
+        x: from_x,
+        y: from_y,
+        magnet: false,
+    });
     let direction: f64;
-
-    let step1: Step;
-    let step2: Step;
-    let step3: Step;
-    let step4: Step;
 
     if current_color == Color::White {
         //BLACK IS CAPTURED
@@ -764,29 +638,29 @@ fn capture_piece(
             direction = 0.5;
         }
 
-        step1 = Step {
-            x: (from_x),
+        steps.push(Step {
+            x: from_x,
             y: (from_y + direction),
-            magnet: (true),
-        };
+            magnet: true,
+        });
 
-        step2 = Step {
+        steps.push(Step {
             x: (8.5),
             y: (from_y + direction),
-            magnet: (true),
-        };
+            magnet: true,
+        });
 
-        step3 = Step {
+        steps.push(Step {
             x: (8.5),
             y: (0.5 + captured_blacks / 2.0),
-            magnet: (true),
-        };
+            magnet: true,
+        });
 
-        step4 = Step {
+        steps.push(Step {
             x: (9.0),
             y: (0.5 + captured_blacks / 2.0),
-            magnet: (true),
-        };
+            magnet: true,
+        });
     } else {
         //WHITE IS CAPTURED
         if 8.5 - captured_whites / 2.0 < from_y {
@@ -795,39 +669,35 @@ fn capture_piece(
             direction = 0.5;
         }
 
-        step1 = Step {
-            x: (from_x),
+        steps.push(Step {
+            x: from_x,
             y: (from_y + direction),
-            magnet: (true),
-        };
+            magnet: true,
+        });
 
-        step2 = Step {
+        steps.push(Step {
             x: (0.5),
             y: (from_y + direction),
-            magnet: (true),
-        };
+            magnet: true,
+        });
 
-        step3 = Step {
+        steps.push(Step {
             x: (0.5),
             y: (8.5 - captured_whites / 2.0),
-            magnet: (true),
-        };
+            magnet: true,
+        });
 
-        step4 = Step {
+        steps.push(Step {
             x: (0.0),
             y: (8.5 - captured_whites / 2.0),
-            magnet: (true),
-        };
+            magnet: true,
+        });
     }
-    steps.push(engage);
-    steps.push(step1);
-    steps.push(step2);
-    steps.push(step3);
-    steps.push(step4);
 
-    return steps;
+    steps
 }
 
+#[derive(Debug, Clone, Copy)]
 struct Step {
     x: f64,
     y: f64,
@@ -840,28 +710,28 @@ fn print_step(step: Step) {
     println!("magnet: {}", step.magnet);
 }
 
-fn rank_to_float(rank: Rank) -> f64 {
+const fn rank_to_float(rank: Rank) -> f64 {
     match rank {
-        Rank::First => return 1.0,
-        Rank::Second => return 2.0,
-        Rank::Third => return 3.0,
-        Rank::Fourth => return 4.0,
-        Rank::Fifth => return 5.0,
-        Rank::Sixth => return 6.0,
-        Rank::Seventh => return 7.0,
-        Rank::Eighth => return 8.0,
+        Rank::First => 1.0,
+        Rank::Second => 2.0,
+        Rank::Third => 3.0,
+        Rank::Fourth => 4.0,
+        Rank::Fifth => 5.0,
+        Rank::Sixth => 6.0,
+        Rank::Seventh => 7.0,
+        Rank::Eighth => 8.0,
     }
 }
 
-fn file_to_float(file: File) -> f64 {
+const fn file_to_float(file: File) -> f64 {
     match file {
-        File::A => return 1.0,
-        File::B => return 2.0,
-        File::C => return 3.0,
-        File::D => return 4.0,
-        File::E => return 5.0,
-        File::F => return 6.0,
-        File::G => return 7.0,
-        File::H => return 8.0,
+        File::A => 1.0,
+        File::B => 2.0,
+        File::C => 3.0,
+        File::D => 4.0,
+        File::E => 5.0,
+        File::F => 6.0,
+        File::G => 7.0,
+        File::H => 8.0,
     }
 }
