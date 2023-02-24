@@ -7,27 +7,26 @@ use shakmaty::{
 
 fn main() {
     //for now chess games are going to start from the beginning, this FEN is used for testing
-    let fen: Fen = "r3k2r/ppp2p2/2qp4/4pb2/4P1Pp/2P2N2/PP1P1PpP/R3K2R w KQkq - 0 3"
-        .parse()
+    let fen = "r3k2r/ppp2p2/2qp4/4pb2/4P1Pp/2P2N2/PP1P1PpP/R3K2R w KQkq - 0 3"
+        .parse::<Fen>()
         .unwrap();
 
     let mut pos: Chess = fen.into_position(CastlingMode::Standard).unwrap();
 
-    let mut state: State = State::Idle;
-    let mut line;
+    let mut state = State::Idle;
     print_board_from_fen(pos.board().to_string());
 
-    //Right not the program is set to loop through the input from the reed switches ONLY
+    // Right now the program is set to loop through the input from the reed switches ONLY
     loop {
-        line = String::new();
+        let mut line = String::new();
         let newstate = state.clone();
         let rgbstate = state.clone();
         print_state_name(state);
 
-        //This is the output for LED MATRIX
-        print_RGB(get_RGB(&pos, rgbstate));
+        // This is the output for LED MATRIX
+        print_rgb(get_rgb(&pos, rgbstate));
 
-        //This is input from REED SWITCHES
+        // This is input from REED SWITCHES
         std::io::stdin().read_line(&mut line).unwrap();
         if line == "-1" {
             break;
@@ -49,16 +48,16 @@ fn main() {
     //TODO: make sure that moves coming from SAN are committed by using Chess.play()
 }
 
-fn get_RGB(position: &Chess, state: State) -> RGB {
+fn get_rgb(position: &Chess, state: State) -> RGB {
     let color = position.turn();
     let occupied = position.board().occupied();
     let enemies = position.them();
     match state {
         State::Idle => {
             let rgb = RGB {
-                R: Bitboard::EMPTY,
-                G: Bitboard::EMPTY,
-                B: Bitboard::EMPTY,
+                r: Bitboard::EMPTY,
+                g: Bitboard::EMPTY,
+                b: Bitboard::EMPTY,
             };
             rgb
         }
@@ -97,15 +96,15 @@ fn get_RGB(position: &Chess, state: State) -> RGB {
             let rgb: RGB;
             if is_promotion {
                 rgb = RGB {
-                    R: can_move_to.with(can_capture),
-                    G: can_capture,
-                    B: can_move_to,
+                    r: can_move_to.with(can_capture),
+                    g: can_capture,
+                    b: can_move_to,
                 };
             } else {
                 rgb = RGB {
-                    R: can_capture,
-                    G: can_move_to.with(can_capture),
-                    B: Bitboard::EMPTY,
+                    r: can_capture,
+                    g: can_move_to.with(can_capture),
+                    b: Bitboard::EMPTY,
                 };
             }
             rgb
@@ -113,17 +112,17 @@ fn get_RGB(position: &Chess, state: State) -> RGB {
         State::EnemyPU(square) => {
             let attackers = position.board().attacks_to(square, color, occupied);
             let rgb = RGB {
-                R: Bitboard::EMPTY,
-                G: attackers,
-                B: Bitboard::EMPTY,
+                r: Bitboard::EMPTY,
+                g: attackers,
+                b: Bitboard::EMPTY,
             };
             rgb
         }
         State::FriendlyAndEnemyPU(_, enemy_square) => {
             let rgb = RGB {
-                R: Bitboard::EMPTY,
-                G: Bitboard::from_square(enemy_square),
-                B: Bitboard::EMPTY,
+                r: Bitboard::EMPTY,
+                g: Bitboard::from_square(enemy_square),
+                b: Bitboard::EMPTY,
             };
             rgb
         }
@@ -147,41 +146,41 @@ fn get_RGB(position: &Chess, state: State) -> RGB {
             }
 
             let rgb = RGB {
-                R: Bitboard::from_square(target_square),
-                G: Bitboard::EMPTY,
-                B: Bitboard::from_square(target_square),
+                r: Bitboard::from_square(target_square),
+                g: Bitboard::EMPTY,
+                b: Bitboard::from_square(target_square),
             };
             rgb
         }
         State::CastlingPutRookDown(_, _, target_square) => {
             let rgb = RGB {
-                R: Bitboard::from_square(target_square),
-                G: Bitboard::EMPTY,
-                B: Bitboard::from_square(target_square),
+                r: Bitboard::from_square(target_square),
+                g: Bitboard::EMPTY,
+                b: Bitboard::from_square(target_square),
             };
             rgb
         }
         State::InvalidPiecePU(_, square) => {
             let rgb = RGB {
-                R: Bitboard::from_square(square),
-                G: Bitboard::EMPTY,
-                B: Bitboard::EMPTY,
+                r: Bitboard::from_square(square),
+                g: Bitboard::EMPTY,
+                b: Bitboard::EMPTY,
             };
             rgb
         }
         State::InvalidMove(_, square) => {
             let rgb = RGB {
-                R: Bitboard::from_square(square),
-                G: Bitboard::EMPTY,
-                B: Bitboard::EMPTY,
+                r: Bitboard::from_square(square),
+                g: Bitboard::EMPTY,
+                b: Bitboard::EMPTY,
             };
             rgb
         }
         State::Error => {
             let rgb = RGB {
-                R: Bitboard::FULL,
-                G: Bitboard::EMPTY,
-                B: Bitboard::EMPTY,
+                r: Bitboard::FULL,
+                g: Bitboard::EMPTY,
+                b: Bitboard::EMPTY,
             };
             rgb
         }
@@ -189,15 +188,15 @@ fn get_RGB(position: &Chess, state: State) -> RGB {
 }
 
 struct RGB {
-    R: Bitboard,
-    G: Bitboard,
-    B: Bitboard,
+    r: Bitboard,
+    g: Bitboard,
+    b: Bitboard,
 }
 
-fn print_RGB(rgb: RGB) {
-    print_bitboard(rgb.R);
-    print_bitboard(rgb.G);
-    print_bitboard(rgb.B);
+fn print_rgb(rgb: RGB) {
+    print_bitboard(rgb.r);
+    print_bitboard(rgb.g);
+    print_bitboard(rgb.b);
 }
 
 fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Option<Move>) {
@@ -841,7 +840,7 @@ fn print_step(step: Step) {
     println!("magnet: {}", step.magnet);
 }
 
-fn rank_to_float(rank: shakmaty::Rank) -> f64 {
+fn rank_to_float(rank: Rank) -> f64 {
     match rank {
         Rank::First => return 1.0,
         Rank::Second => return 2.0,
