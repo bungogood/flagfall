@@ -1,7 +1,7 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(dead_code)]
 
-use log::info;
+use log::{info, error};
 use shakmaty::{
     san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
     Square,
@@ -11,9 +11,9 @@ use std::io::Write;
 
 // handle exe paths on windows & unix
 #[cfg(windows)]
-const OPPONENT_WRAPPER_EXE_PATH: &str = "target\\release\\opponent-wrapper.exe";
+const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper.exe";
 #[cfg(unix)]
-const OPPONENT_WRAPPER_EXE_PATH: &str = "target/release/opponent-wrapper";
+const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper";
 
 // 1. SETUP BOARD (kinda handwaved, user probably does it)
 // 2. SETUP GAME PARAMETERS (time control, human playing colour, etc)
@@ -60,7 +60,10 @@ fn main() {
     std::io::stdin().read_line(&mut user_input).unwrap();
     write!(opponent_wrapper_stdin, "{user_input}").unwrap();
     let mut send_line = |line: &str| {
-        writeln!(opponent_wrapper_stdin, "{line}").unwrap();
+        let res = writeln!(opponent_wrapper_stdin, "{line}");
+        if let Err(e) = res {
+            error!("Failed to send line to opponent wrapper: {e}");
+        }
     };
     let mut recv_line = || {
         stdout_lines.next().unwrap().unwrap()
@@ -68,40 +71,50 @@ fn main() {
 
     // Right now the program is set to loop through the input from the reed switches ONLY
     loop {
-        // STEP 3: READ REED-SWITCH OUTPUT
-        let mut line = String::new();
-        let newstate = state;
-
-        // This is input from REED SWITCHES
-        std::io::stdin().read_line(&mut line).unwrap();
-        let user_input = line.trim();
-        info!("received line: {user_input}");
-        if user_input == "-1" {
+        if pos.is_game_over() {
+            info!("game ended with {}", pos.outcome().unwrap());
             break;
         }
+        loop {
+            // STEP 3: READ REED-SWITCH OUTPUT
+            let mut line = String::new();
+            let newstate = state;
 
-        let mv;
-        (state, mv) = update_state(&pos, user_input.parse::<u32>().unwrap(), newstate);
-        let copied_pos = pos.clone();
-        if let Some(mv) = mv {
-            info!("got full move, playing {mv}");
-            pos = copied_pos.play(&mv).unwrap();
-            let move_san = San::from_move(&pos, &mv).to_string();
-            info!("sending move {move_san} to opponent wrapper");
-            send_line(&move_san);
-            break;
+            // This is input from REED SWITCHES
+            std::io::stdin().read_line(&mut line).unwrap();
+            if user_input == "\x04" {
+                info!("received EOF from opponent wrapper, exiting");
+                return;
+            }
+            let user_input = line.trim();
+            info!("received line: {user_input}");
+            if user_input == "-1" {
+                break;
+            }
+
+            let mv;
+            (state, mv) = update_state(&pos, user_input.parse::<u32>().unwrap(), newstate);
+            let copied_pos = pos.clone();
+            if let Some(mv) = mv {
+                info!("got full move, playing {mv}");
+                pos = copied_pos.play(&mv).unwrap();
+                let move_san = San::from_move(&pos, &mv).to_string();
+                info!("sending move {move_san} to opponent wrapper");
+                send_line(&move_san);
+                break;
+            }
         }
+
+        let move_from_opponent = recv_line();
+        let san: San = move_from_opponent.parse().expect("Moves from opponent should always be valid SAN.");
+        let mv = san.to_move(&pos).expect("SANs from opponent should always be legal moves.");
+        info!("got move {mv} from opponent wrapper");
+
+        // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
+
+        let steps = move_to_steps(mv, pos.turn(), f64::from(captured_whites), f64::from(captured_blacks));
+        info!("produced steps: {steps:?}", steps = steps);
     }
-
-    let move_from_opponent = recv_line();
-    let san: San = move_from_opponent.parse().expect("Moves from opponent should always be valid SAN.");
-    let mv = san.to_move(&pos).expect("SANs from opponent should always be legal moves.");
-    info!("got move {mv} from opponent wrapper");
-
-    // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
-
-    let steps = move_to_steps(mv, pos.turn(), f64::from(captured_whites), f64::from(captured_blacks));
-    info!("produced steps: {steps:?}", steps = steps);
 
     //The input of SAN is gonna access through this method:
     //convert_san_to_steps(INPUT, pos, captured_blacks, captured_whites)
