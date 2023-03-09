@@ -1,22 +1,59 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(dead_code)]
 
+use log::info;
 use shakmaty::{
-    fen::Fen, san::San, Bitboard, CastlingMode, Chess, Color, File, Move, Position, Rank, Role,
+    san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
     Square,
 };
-use std::fmt::Write;
+use std::io::{BufReader, BufRead};
+use std::io::Write;
+
+const OPPONENT_WRAPPER_EXE_PATH: &str = r#"C:\Users\cosmo\university\system-design-project\flagfall\opponent-wrapper\target\release\opponent-wrapper.exe"#;
+
+// 1. SETUP BOARD (kinda handwaved, user probably does it)
+// 2. SETUP GAME PARAMETERS (time control, human playing colour, etc)
+// 3. READ REED-SWITCH OUTPUT
+// 4. UPDATE INTERNAL STATE FROM RSWITCH
+// 5. [MAYBE] UPDATE LEDS
+// 6. GOTO 3 UNTIL DONE
+// 7. OUTPUT MOVE TO OPPONENT WRAPPER
+// 8. RECEIVE MOVE FROM OPPONENT
+// 9. CONVERT MOVE TO MOVEMENT STEPS
+// 10. SEND STEPS TO LEVY'S PROGRAM
+// 11. GOTO 3 UNTIL GAME ENDS
+// 12. EXIT
 
 fn main() {
-    //for now chess games are going to start from the beginning, this FEN is used for testing
-    let fen = "r3k2r/ppp2p2/2qp4/4pb2/4P1Pp/2P2N2/PP1P1PpP/R3K2R w KQkq - 0 3"
-        .parse::<Fen>()
-        .unwrap();
-
-    let mut pos: Chess = fen.into_position(CastlingMode::Standard).unwrap();
+    // STEP 1: SETUP BOARD
+    let mut pos = Chess::default();
 
     let mut state = State::Idle;
-    print_board_from_fen(&pos.board().to_string());
+    info!("Entered starting position: {fen}", fen = pos.board());
+
+    // STEP 2: SETUP GAME PARAMETERS
+    let mut opponent_wrapper_proc = std::process::Command::new(OPPONENT_WRAPPER_EXE_PATH)
+        .arg("-e")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn opponent-wrapper process");
+    let opponent_wrapper_stdout = BufReader::new(opponent_wrapper_proc.stdout.take().unwrap());
+    let mut opponent_wrapper_stdin = opponent_wrapper_proc.stdin.take().unwrap();
+    let mut stdout_lines = opponent_wrapper_stdout.lines();
+
+    // the opponent wrapper gives two prompts on boot, we need to pipe them through and pipe the responses back
+    let mut user_input = String::new();
+    let first_line = stdout_lines.next().unwrap().unwrap();
+    println!("{first_line}");
+    std::io::stdin().read_line(&mut user_input).unwrap();
+    write!(opponent_wrapper_stdin, "{user_input}").unwrap();
+    let second_line = stdout_lines.next().unwrap().unwrap();
+    println!("{second_line}");
+    std::io::stdin().read_line(&mut user_input).unwrap();
+    write!(opponent_wrapper_stdin, "{user_input}").unwrap();
+
+    // STEP 3: READ REED-SWITCH OUTPUT
 
     // Right now the program is set to loop through the input from the reed switches ONLY
     loop {
@@ -423,6 +460,7 @@ fn print_state_name(state: State) {
 }
 
 fn print_board_from_fen(fen: &str) {
+    use std::fmt::Write;
     let mut output: String = String::new();
     let mut counter = 0;
     output.push(' ');
