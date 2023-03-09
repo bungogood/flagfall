@@ -9,7 +9,11 @@ use shakmaty::{
 use std::io::{BufReader, BufRead};
 use std::io::Write;
 
-const OPPONENT_WRAPPER_EXE_PATH: &str = r#"C:\Users\cosmo\university\system-design-project\flagfall\opponent-wrapper\target\release\opponent-wrapper.exe"#;
+// handle exe paths on windows & unix
+#[cfg(windows)]
+const OPPONENT_WRAPPER_EXE_PATH: &str = "target\\release\\opponent-wrapper.exe";
+#[cfg(unix)]
+const OPPONENT_WRAPPER_EXE_PATH: &str = "target/release/opponent-wrapper";
 
 // 1. SETUP BOARD (kinda handwaved, user probably does it)
 // 2. SETUP GAME PARAMETERS (time control, human playing colour, etc)
