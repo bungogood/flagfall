@@ -25,9 +25,11 @@ const OPPONENT_WRAPPER_EXE_PATH: &str = r#"C:\Users\cosmo\university\system-desi
 // 12. EXIT
 
 fn main() {
+    env_logger::init();
+
     // STEP 1: SETUP BOARD
     let mut pos = Chess::default();
-
+    let (mut captured_whites, mut captured_blacks) = (0u8, 0u8);
     let mut state = State::Idle;
     info!("Entered starting position: {fen}", fen = pos.board());
 
@@ -50,41 +52,61 @@ fn main() {
     write!(opponent_wrapper_stdin, "{user_input}").unwrap();
     let second_line = stdout_lines.next().unwrap().unwrap();
     println!("{second_line}");
+    user_input.clear();
     std::io::stdin().read_line(&mut user_input).unwrap();
     write!(opponent_wrapper_stdin, "{user_input}").unwrap();
-
-    // STEP 3: READ REED-SWITCH OUTPUT
+    let mut send_line = |line: &str| {
+        writeln!(opponent_wrapper_stdin, "{line}").unwrap();
+    };
+    let mut recv_line = || {
+        stdout_lines.next().unwrap().unwrap()
+    };
 
     // Right now the program is set to loop through the input from the reed switches ONLY
     loop {
+        // STEP 3: READ REED-SWITCH OUTPUT
         let mut line = String::new();
         let newstate = state;
-        let rgbstate = state;
-        print_state_name(state);
-
-        // This is the output for LED MATRIX
-        print_rgb(get_rgb(&pos, rgbstate));
 
         // This is input from REED SWITCHES
         std::io::stdin().read_line(&mut line).unwrap();
-        if line == "-1" {
+        let user_input = line.trim();
+        info!("received line: {user_input}");
+        if user_input == "-1" {
             break;
         }
 
         let mv;
-        (state, mv) = update_state(&pos, line.trim().parse::<u32>().unwrap(), newstate);
-        let copiedmv = mv.clone();
+        (state, mv) = update_state(&pos, user_input.parse::<u32>().unwrap(), newstate);
         let copied_pos = pos.clone();
-        if mv.is_some() {
-            pos = copied_pos.play(&copiedmv.unwrap()).unwrap();
-            print_board_from_fen(&pos.board().to_string());
+        if let Some(mv) = mv {
+            info!("got full move, playing {mv}");
+            pos = copied_pos.play(&mv).unwrap();
+            let move_san = San::from_move(&pos, &mv).to_string();
+            info!("sending move {move_san} to opponent wrapper");
+            send_line(&move_san);
+            break;
         }
     }
+
+    let move_from_opponent = recv_line();
+    let san: San = move_from_opponent.parse().expect("Moves from opponent should always be valid SAN.");
+    let mv = san.to_move(&pos).expect("SANs from opponent should always be legal moves.");
+    info!("got move {mv} from opponent wrapper");
+
+    // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
+
+    let steps = move_to_steps(mv, pos.turn(), f64::from(captured_whites), f64::from(captured_blacks));
+    info!("produced steps: {steps:?}", steps = steps);
 
     //The input of SAN is gonna access through this method:
     //convert_san_to_steps(INPUT, pos, captured_blacks, captured_whites)
     //the method also gives an output for CORE-XY in the form of a list of structs
     //TODO: make sure that moves coming from SAN are committed by using Chess.play()
+
+    // wait for opponent wrapper to finish
+    let opponent_wrapper_output = opponent_wrapper_proc.wait().unwrap();
+    info!("opponent wrapper exited with status {status}", status = opponent_wrapper_output);
 }
 
 #[allow(clippy::too_many_lines)]
@@ -284,7 +306,7 @@ fn update_state(position: &Chess, instruction: u32, state: State) -> (State, Opt
                     promotion: (None),
                 };
                 if position.is_legal(&mv) {
-                    println!("MOVE COMMITTED");
+                    info!("MOVE COMMITTED");
                     (State::Idle, Some(mv))
                 } else {
                     (State::InvalidMove(prev_square, square), None)
@@ -507,20 +529,6 @@ fn print_bitboard(bitboard: Bitboard) {
     }
     output.push_str(line.chars().rev().collect::<String>().as_str());
     println!("{}", output.as_str());
-}
-
-fn convert_san_to_steps(
-    san: &str,
-    pos: &Chess,
-    captured_blacks: f64,
-    captured_whites: f64,
-) -> Vec<Step> {
-    let san: San = san.parse().unwrap();
-
-    let current_color: Color = pos.turn();
-    let m = san.to_move(pos).unwrap();
-
-    move_to_steps(m, current_color, captured_whites, captured_blacks)
 }
 
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
