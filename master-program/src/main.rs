@@ -29,7 +29,7 @@ const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper";
 // 11. GOTO 3 UNTIL GAME ENDS
 // 12. EXIT
 
-#[allow(clippy::unnecessary_wraps)]
+#[allow(clippy::unnecessary_wraps, clippy::too_many_lines)]
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     // STEP 1: SETUP BOARD
@@ -72,6 +72,14 @@ fn main() -> anyhow::Result<()> {
     user_input.clear();
     std::io::stdin().read_line(&mut user_input).unwrap();
     write!(opponent_wrapper_stdin, "{user_input}").unwrap();
+    let player_turn = match user_input.trim() {
+        "white" => Color::White,
+        "black" => Color::Black,
+        x => {
+            error!("User gave invalid turn: {x}");
+            return Err(anyhow::anyhow!("User gave invalid turn: {x}"));
+        }
+    };
     let mut send_line = |line: &str| {
         let res = writeln!(opponent_wrapper_stdin, "{line}");
         if let Err(e) = res {
@@ -86,53 +94,58 @@ fn main() -> anyhow::Result<()> {
     'game_loop: loop {
         if let Some(outcome) = pos.outcome() {
             info!("game ended with {outcome}");
+            send_line("quit");
             break 'game_loop;
         }
-        loop {
-            // STEP 3: READ REED-SWITCH OUTPUT
-            let newstate = state;
+        if pos.turn() == player_turn {
+            loop {
+                // STEP 3: READ REED-SWITCH OUTPUT
+                let newstate = state;
 
-            // This is input from REED SWITCHES
-            let mut buf = String::new();
-            let instruction = loop {
-                buf.clear();
-                std::io::stdin().read_line(&mut buf).unwrap();
-                let line = buf.trim();
-                info!("received line: {line}");
-                if matches!(line, "\x04" | "-1" | "quit" | "exit") {
-                    info!("received quit signal, exiting");
-                    send_line("quit");
-                    break 'game_loop;
-                }
-                if let Ok(instruction) = line.parse::<u32>() {
-                    break instruction;
-                }
-                error!("received invalid instruction: {line}, expected square co-ordinates or -1 to end turn");
-            };
+                // This is input from REED SWITCHES
+                let mut buf = String::new();
+                let instruction = loop {
+                    buf.clear();
+                    std::io::stdin().read_line(&mut buf).unwrap();
+                    let line = buf.trim();
+                    info!("received line: {line}");
+                    if matches!(line, "\x04" | "-1" | "quit" | "exit") {
+                        info!("received quit signal, exiting");
+                        send_line("quit");
+                        break 'game_loop;
+                    }
+                    if let Ok(instruction) = line.parse::<u32>() {
+                        break instruction;
+                    }
+                    error!("received invalid instruction: {line}, expected square co-ordinates or -1 to end turn");
+                };
 
-            let mv;
-            (state, mv) = update_state(&pos, instruction, newstate);
-            let copied_pos = pos.clone();
-            if let Some(mv) = mv {
-                info!("got full move, playing {mv}");
-                pos = copied_pos.play(&mv).unwrap();
-                info!("new position: \n{fen}", fen = pos.board());
-                let move_san = San::from_move(&pos, &mv).to_string();
-                info!("sending move {move_san} to opponent wrapper");
-                send_line(&move_san);
-                break;
+                let mv;
+                (state, mv) = update_state(&pos, instruction, newstate);
+                let copied_pos = pos.clone();
+                if let Some(mv) = mv {
+                    info!("got full move, playing {mv}");
+                    pos = copied_pos.play(&mv).unwrap();
+                    print_board_from_fen(&pos.board().to_string());
+                    let move_san = San::from_move(&pos, &mv).to_string();
+                    info!("sending move {move_san} to opponent wrapper");
+                    send_line(&move_san);
+                    break;
+                }
             }
+        } else {
+            let move_from_opponent = recv_line();
+            let san: San = move_from_opponent.parse().with_context(|| "Moves from opponent should always be valid SAN.")?;
+            let mv = san.to_move(&pos).with_context(|| "SANs from opponent should always be legal moves.")?;
+            info!("got move {mv} from opponent wrapper");
+            pos = pos.play(&mv).unwrap();
+            print_board_from_fen(&pos.board().to_string());
+
+            // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
+
+            let steps = move_to_steps(mv, pos.turn(), f64::from(captured_whites), f64::from(captured_blacks));
+            info!("produced steps: {steps:?}", steps = steps);
         }
-
-        let move_from_opponent = recv_line();
-        let san: San = move_from_opponent.parse().with_context(|| "Moves from opponent should always be valid SAN.")?;
-        let mv = san.to_move(&pos).with_context(|| "SANs from opponent should always be legal moves.")?;
-        info!("got move {mv} from opponent wrapper");
-
-        // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
-
-        let steps = move_to_steps(mv, pos.turn(), f64::from(captured_whites), f64::from(captured_blacks));
-        info!("produced steps: {steps:?}", steps = steps);
     }
 
     //The input of SAN is gonna access through this method:
@@ -521,13 +534,25 @@ fn print_state_name(state: State) {
 
 fn print_board_from_fen(fen: &str) {
     use std::fmt::Write;
+    static ENDLINES: [&str; 8] = [
+        "     0  1  2  3  4  5  6  7",
+        "     8  9 10 11 12 13 14 15\n",
+        "    16 17 18 19 20 21 22 23\n",
+        "    24 25 26 27 28 29 30 31\n",
+        "    32 33 34 35 36 37 38 39\n",
+        "    40 41 42 43 44 45 46 47\n",
+        "    48 49 50 51 52 53 54 55\n",
+        "    56 57 58 59 60 61 62 63\n",
+    ];
+    let mut rank = 7;
     let mut output: String = String::new();
     let mut counter = 0;
     output.push(' ');
     for c in fen.chars() {
         if counter == 8 {
             counter = 0;
-            output.push('\n');
+            output.push_str(ENDLINES[rank]);
+            rank -= 1;
         }
         match c {
             c @ ('r' | 'R' | 'n' | 'N' | 'b' | 'B' | 'q' | 'Q' | 'k' | 'K' | 'p' | 'P') => {
@@ -547,6 +572,7 @@ fn print_board_from_fen(fen: &str) {
             }
         }
     }
+    output.push_str(ENDLINES[0]);
     println!("{output}");
 }
 
