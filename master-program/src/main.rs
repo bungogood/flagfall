@@ -1,6 +1,7 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(dead_code)]
 
+use anyhow::Context;
 use log::{info, error};
 use shakmaty::{
     san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
@@ -28,12 +29,12 @@ const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper";
 // 11. GOTO 3 UNTIL GAME ENDS
 // 12. EXIT
 
-fn main() {
+#[allow(clippy::unnecessary_wraps)]
+fn main() -> anyhow::Result<()> {
     env_logger::init();
-
     // STEP 1: SETUP BOARD
     let mut pos = Chess::default();
-    let (mut captured_whites, mut captured_blacks) = (0u8, 0u8);
+    let (captured_whites, captured_blacks) = (0u8, 0u8);
     let mut state = State::Idle;
     info!("Entered starting position: {fen}", fen = pos.board());
 
@@ -43,18 +44,30 @@ fn main() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .expect("Failed to spawn opponent-wrapper process");
-    let opponent_wrapper_stdout = BufReader::new(opponent_wrapper_proc.stdout.take().unwrap());
-    let mut opponent_wrapper_stdin = opponent_wrapper_proc.stdin.take().unwrap();
+        .with_context(|| format!("Failed to start opponent wrapper at {OPPONENT_WRAPPER_EXE_PATH}"))?;
+    
+    let opponent_wrapper_stdout = opponent_wrapper_proc
+        .stdout
+        .take()
+        .with_context(|| "Failed to get stdout from created opponent wrapper process")?;
+    let opponent_wrapper_stdout = BufReader::new(opponent_wrapper_stdout);
+    let mut opponent_wrapper_stdin = opponent_wrapper_proc
+        .stdin
+        .take()
+        .with_context(|| "Failed to get stdin from created opponent wrapper process")?;
     let mut stdout_lines = opponent_wrapper_stdout.lines();
 
     // the opponent wrapper gives two prompts on boot, we need to pipe them through and pipe the responses back
     let mut user_input = String::new();
-    let first_line = stdout_lines.next().unwrap().unwrap();
+    let first_line = stdout_lines.next()
+        .with_context(|| "Opponent wrapper gave no input as first line.")?
+        .with_context(|| "Failed to read first line from opponent wrapper.")?;
     println!("{first_line}");
     std::io::stdin().read_line(&mut user_input).unwrap();
     write!(opponent_wrapper_stdin, "{user_input}").unwrap();
-    let second_line = stdout_lines.next().unwrap().unwrap();
+    let second_line = stdout_lines.next()
+        .with_context(|| "Opponent wrapper gave no input as second line.")?
+        .with_context(|| "Failed to read second line from opponent wrapper.")?;
     println!("{second_line}");
     user_input.clear();
     std::io::stdin().read_line(&mut user_input).unwrap();
@@ -70,34 +83,40 @@ fn main() {
     };
 
     // Right now the program is set to loop through the input from the reed switches ONLY
-    loop {
-        if pos.is_game_over() {
-            info!("game ended with {}", pos.outcome().unwrap());
-            break;
+    'game_loop: loop {
+        if let Some(outcome) = pos.outcome() {
+            info!("game ended with {outcome}");
+            break 'game_loop;
         }
-        loop {
+        'read_switch_read: loop {
             // STEP 3: READ REED-SWITCH OUTPUT
-            let mut line = String::new();
             let newstate = state;
 
             // This is input from REED SWITCHES
-            std::io::stdin().read_line(&mut line).unwrap();
-            if user_input == "\x04" {
-                info!("received EOF from opponent wrapper, exiting");
-                return;
-            }
-            let user_input = line.trim();
-            info!("received line: {user_input}");
-            if user_input == "-1" {
-                break;
-            }
+            let mut buf = String::new();
+            let instruction = loop {
+                buf.clear();
+                std::io::stdin().read_line(&mut buf).unwrap();
+                let line = buf.trim();
+                info!("received line: {line}");
+                if matches!(line, "\x04" | "-1" | "quit" | "exit") {
+                    info!("received quit signal, exiting");
+                    send_line("quit");
+                    break 'game_loop;
+                }
+                if let Ok(instruction) = line.parse::<u32>() {
+                    break instruction;
+                }
+                error!("received invalid instruction: {line}, expected square co-ordinates or -1 to end turn");
+            };
 
             let mv;
-            (state, mv) = update_state(&pos, user_input.parse::<u32>().unwrap(), newstate);
+            (state, mv) = update_state(&pos, instruction, newstate);
             let copied_pos = pos.clone();
             if let Some(mv) = mv {
                 info!("got full move, playing {mv}");
                 pos = copied_pos.play(&mv).unwrap();
+                info!("new position: \n{fen}", fen = pos.board());
                 let move_san = San::from_move(&pos, &mv).to_string();
                 info!("sending move {move_san} to opponent wrapper");
                 send_line(&move_san);
@@ -106,8 +125,8 @@ fn main() {
         }
 
         let move_from_opponent = recv_line();
-        let san: San = move_from_opponent.parse().expect("Moves from opponent should always be valid SAN.");
-        let mv = san.to_move(&pos).expect("SANs from opponent should always be legal moves.");
+        let san: San = move_from_opponent.parse().with_context(|| "Moves from opponent should always be valid SAN.")?;
+        let mv = san.to_move(&pos).with_context(|| "SANs from opponent should always be legal moves.")?;
         info!("got move {mv} from opponent wrapper");
 
         // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
@@ -122,8 +141,10 @@ fn main() {
     //TODO: make sure that moves coming from SAN are committed by using Chess.play()
 
     // wait for opponent wrapper to finish
-    let opponent_wrapper_output = opponent_wrapper_proc.wait().unwrap();
+    let opponent_wrapper_output = opponent_wrapper_proc.wait().with_context(|| "Failed to wait for opponent wrapper to finish")?;
     info!("opponent wrapper exited with status {status}", status = opponent_wrapper_output);
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_lines)]
