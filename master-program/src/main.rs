@@ -88,7 +88,7 @@ fn main() -> anyhow::Result<()> {
             info!("game ended with {outcome}");
             break 'game_loop;
         }
-        'read_switch_read: loop {
+        loop {
             // STEP 3: READ REED-SWITCH OUTPUT
             let newstate = state;
 
