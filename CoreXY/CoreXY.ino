@@ -1,7 +1,7 @@
 #include<stdio.h>
 
 #define HIGH_SPD 1000 
-#define LOW_SPD  300
+#define LOW_SPD  200
 #define CALI_SPD 1500
 #define SPD_TO_INTERVAL(spd) (int) 10000 / spd
 #define MM_TO_STEPS(mm) (long) mm * 159
@@ -39,8 +39,8 @@ typedef struct Position {
 } Position;
 
 Position current_pos = {-1, -1};
-const int MAX_X = 600;
-const int MAX_Y = 600;
+const int MAX_X = 500;
+const int MAX_Y = 560;
 const int MIN_X = 0;
 const int MIN_Y = 0;
 
@@ -61,24 +61,24 @@ void setup() {
     digitalWrite(M1.DISABLE_PIN, HIGH);
     digitalWrite(M2.DISABLE_PIN, HIGH);
 
-    Serial.begin(9600);
-    delay(3000);
+    Serial.begin(115200);
+
+
     calibration();
-    delay(1000);
     
-    move_to((Position) {5, 5}, LOW_SPD);
-    delay(1000);
-    move_to((Position) {100, 0}, HIGH_SPD);
-    delay(1000);
-    move_to((Position) {300, 200}, LOW_SPD);
-    delay(1000);
-    move_to((Position) {50, 0}, HIGH_SPD);
-    delay(1000);
+    delay(2000);
+
 
 }
 
 
 void loop() {
+    move_to((Position){100, 100}, HIGH_SPD);
+    delay(500);
+    move_to((Position){200, 300}, HIGH_SPD);
+    delay(500);
+    move_to((Position){0, 200}, HIGH_SPD);
+    delay(2000);
 
 }
 
