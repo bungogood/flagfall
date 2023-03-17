@@ -1,10 +1,8 @@
+# OS/editor tmps
 .vscode/
-
 .DS_Store
 
-
-# Added by cargo
-
+# Rust
 /target
 engines/viridithas.exe
 engines/viridithas
