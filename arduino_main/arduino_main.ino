@@ -1,5 +1,28 @@
-#include <stdio.h>
+#include <FastLED.h>
 
+// ====================== LED Configuration ======================
+#define LED_PIN 2
+#define NUM_LEDS 64
+// LED State
+CRGB leds[NUM_LEDS];
+
+
+// =================== Reed Switch Configuration ===================
+int rsw_in_pin[8]  = { 30, 31, 32, 33, 34, 35, 36, 37 };
+int rsw_out_pin[8] = { 47, 46, 45, 44, 43, 42, 41, 40 };
+// Reed Switch State
+bool rsw_state[8][8] = { 0 };
+
+
+// ====================== CoreXY Configuration ======================
+/* 
+*  CoreXY Layout
+*   .---------.
+*   |         |
+*   |         |
+*   |[O]======|
+*  [M1]-----[M2]
+*/
 #define HIGH_SPD 1000 
 #define LOW_SPD  200
 #define CALI_SPD 1500
@@ -16,37 +39,178 @@
 #define DOWN_RIGHT 7
 
 #define LIMIT_SW_PIN A0
-
-/* 
-*  CoreXY Layout
-*   .---------.
-*   |         |
-*   |         |
-*   |[O]======|
-*  [M1]-----[M2]
-*/
-
+// Stepper Motor Pins
 typedef struct StepperMotor {
     const int DIR_PIN;
     const int STEP_PIN;
     const int DISABLE_PIN;
 } StepperMotor;
 
-StepperMotor M1 = {4, 5, 12}, M2 = {7, 6, 8};
+StepperMotor M1 = { 4, 5, 12 }, M2 = { 7, 6, 8 };
 
-
+// Stepper Motor State
 typedef struct Position {
     int x;
     int y;
 } Position;
 
-Position current_pos = {-1, -1};
+Position current_pos = { -1, -1 };
 const int MAX_X = 500;
 const int MAX_Y = 560;
 const int MIN_X = 0;
 const int MIN_Y = 0;
+const int OFFSET_X = 0;
+const int OFFSET_Y = 0;
 
-void setup() {   
+// ====================== Electromagnet Configuration ======================
+#define ELECTROMAGNET_PIN 9
+
+
+// ====================== Main Program ======================
+
+void setup() {
+    Serial.begin(115200);
+    LED_setup(16);
+    rsw_setup();
+    // core_xy_setup();
+    // calibration();
+
+}
+
+void loop() {
+    rsw_state_update();
+    rsw_state_display();
+    bool result[8][8];
+    bool result2[8][8];
+    transpose(rsw_state, result2);
+    filp_row(result2, result);
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (result[i][j]) {
+                set_LED_xy(i + 1, j + 1, CRGB::Gold);
+            } else {
+                set_LED_xy(i + 1, j + 1, CRGB::Turquoise);
+            }
+        }
+    }
+    FastLED.show();
+}
+
+void transpose(bool matrix[8][8], bool result[8][8]) {
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            result[j][i] = matrix[i][j];
+        }
+    }
+}
+
+void filp_row(bool matrix[8][8], bool result[8][8]) {
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            result[i][j] = matrix[i][7 - j];
+        }
+    }
+}
+
+
+
+
+
+// ====================== LED Functions ======================
+
+/*
+* The setup() function in LedControl
+* 
+* @param brightness: Brightness of all LEDs, [0 - 255], recommended 16
+*/
+void LED_setup(int brightness) {
+    // Clip brightness to avoid burning out LEDs
+    if (brightness > 50) {
+        brightness = 50;
+    }
+    FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
+    FastLED.setBrightness(brightness);
+}
+
+/*
+* Set the color of a LED at position (x, y)
+*
+* @param x: Row number [1 - 8]
+* @param y: Column number [1 - 8]
+*/ 
+void set_LED_xy(int row, int col, CRGB color) {
+    row--;
+    col--;
+    if (col % 2 == 0) {
+        row = 7 - row;
+    }
+    leds[(col * 8) + row] = color;
+}
+
+/*
+* Set the color of a LED at position i
+*
+* @param i: Integer between 0 (bottom left) and 63 (top right)
+*/
+void set_LED_ith(int i, CRGB color) {
+    if (i / 8 % 2 == 0) {
+        i = 7 - (i % 8);
+    }
+    leds[i] = color;
+}
+
+
+// =================== Reed Switch Functions ===================
+
+/*
+* The setup() function in ReedSwitchDetection
+*/
+void rsw_setup() {
+    // set the reed switch pins to output and input
+    for (int i = 0; i < 8; i++) {
+        pinMode(rsw_out_pin[i], OUTPUT);
+        digitalWrite(rsw_out_pin[i], LOW);
+        pinMode(rsw_in_pin[i], INPUT);
+    }
+}
+
+/* 
+* Update the state of reed switches,
+* stored in rsw_state[8][8]
+*/
+void rsw_state_update() {
+    for (int i = 0; i < 8; i++) {
+        digitalWrite(rsw_out_pin[i], HIGH);
+        for (int j = 0; j < 8; j++) {
+            rsw_state[i][j] = digitalRead(rsw_in_pin[j]);
+        }
+        digitalWrite(rsw_out_pin[i], LOW);
+        delay(10);
+    }
+}
+
+
+/*
+* Display the state of reed switches
+*/
+void rsw_state_display() {
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            Serial.print(rsw_state[i][j]);
+            Serial.print(" ");
+        }
+        Serial.println();
+    }
+    Serial.println();
+}
+
+// =================== Stepper Motor Functions ===================
+
+/*
+* The setup() function in CoreXY
+*/
+void core_xy_setup() {
     // Setting motor pins to output
     pinMode(M1.DIR_PIN, OUTPUT);
     pinMode(M1.STEP_PIN, OUTPUT);
@@ -62,24 +226,6 @@ void setup() {
     // DisEnable the motors
     digitalWrite(M1.DISABLE_PIN, HIGH);
     digitalWrite(M2.DISABLE_PIN, HIGH);
-
-    Serial.begin(115200);
-
-
-    calibration();
-    
-    delay(2000);
-}
-
-
-void loop() {
-    // move_to((Position){100, 100}, HIGH_SPD);
-    // delay(500);
-    // move_to((Position){200, 300}, HIGH_SPD);
-    // delay(500);
-    // move_to((Position){0, 200}, HIGH_SPD);
-    // delay(2000);
-
 }
 
 /*
@@ -117,12 +263,14 @@ void calibration() {
     digitalWrite(M1.DISABLE_PIN, HIGH);
 
     // Reset the current position
-    current_pos.x = 0;
-    current_pos.y = 0;
+    current_pos.x = -OFFSET_X;
+    current_pos.y = -OFFSET_Y;
     
-    Serial.println("DONE");
+    Serial.println("CALIBRATION DONE");
 
 }
+
+
 
 /*
 * Move the gantry to the target position.
@@ -299,3 +447,26 @@ void move_single_motor(StepperMotor motor, long step, int speed, bool direction)
     digitalWrite(M2.DISABLE_PIN, HIGH);
 }
 
+
+// ================== Electromagnet Functions ==================
+
+/*
+* The setup function for the electromagnet
+*/
+void electromagnet_setup() {
+    pinMode(ELECTROMAGNET_PIN, OUTPUT);
+    magnet_off();
+}
+/*
+* Turn on the electromagnet
+*/
+void magnet_on() {
+    digitalWrite(ELECTROMAGNET_PIN, HIGH);
+}
+
+/*
+* Turn off the electromagnet
+*/
+void magnet_off() {
+    digitalWrite(ELECTROMAGNET_PIN, LOW);
+}
