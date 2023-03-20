@@ -6,6 +6,23 @@ const char* const HANDSHAKE_PROMPT   = "PC TO ARDUINO_1\n";
 const char* const HANDSHAKE_RESPONSE = "ARDUINO_1 TO PC\n"; 
 const char LF_TERM = '\n'; 
 
+enum class Ops {
+    READ_SENSOR, 
+    CONTINUE, 
+}; 
+
+Ops read_op_from_serial() {
+    const char* const REQUEST_MSG = "REQUEST SENSOR"; 
+    char buf[15] {0}; 
+    if (Serial.available()) {
+        size_t read_amnt = Serial.readBytesUntil('\n', buf, 15); 
+        if (strcmp(buf, REQUEST_MSG) == 0) {
+            return Ops::READ_SENSOR; 
+        }
+    }
+    return Ops::CONTINUE; 
+}
+
 /**
  * Perform handshake with Raspi host *once*. 
  * 

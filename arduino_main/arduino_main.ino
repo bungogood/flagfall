@@ -1,4 +1,8 @@
 #include <FastLED.h>
+#include "../../flagfall/example_handshake_impl/communication.h"
+
+// ===================== Serial-comm Configuration =====================
+bool volatile handshake_flag = false; 
 
 // ====================== LED Configuration ======================
 #define LED_PIN 2
@@ -78,8 +82,21 @@ void setup() {
 }
 
 void loop() {
+    /* [comm] handshake */
+    if (!handshake_flag) {
+        handshake_flag = handshake(); 
+        if (!handshake_flag) return; 
+        Serial.println("Listening..."); 
+    }
+
+    /* After handshake complete */
     rsw_state_update();
-    rsw_state_display();
+
+    // [FIX-COMM]
+    if (read_op_from_serial() == Ops::READ_SENSOR) {
+        rsw_state_display();
+    }
+
     bool result[8][8];
     bool result2[8][8];
     transpose(rsw_state, result2);
