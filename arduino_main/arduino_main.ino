@@ -1,5 +1,5 @@
 #include <FastLED.h>
-#include "../../flagfall/example_handshake_impl/communication.h"
+#include "lib/communication.h"
 
 // ===================== Serial-comm Configuration =====================
 bool volatile handshake_flag = false; 
@@ -63,22 +63,33 @@ const int MAX_X = 500;
 const int MAX_Y = 560;
 const int MIN_X = 0;
 const int MIN_Y = 0;
-const int OFFSET_X = 0;
-const int OFFSET_Y = 0;
+const int OFFSET_X = 7;
+const int OFFSET_Y = 5;
 
 // ====================== Electromagnet Configuration ======================
-#define ELECTROMAGNET_PIN 9
+#define ELECTROMAGNET_PIN 3
+#define MAGNET_READ_PIN A1
 
 
 // ====================== Main Program ======================
+
+typedef struct BoardPosition {
+    float x;
+    float y;
+} BoardPosition;
 
 void setup() {
     Serial.begin(115200);
     LED_setup(16);
     rsw_setup();
-    // core_xy_setup();
+    magnet_setup();
+    core_xy_setup();
+    // test_limit_sw();
     // calibration();
-
+    move_to(Position { 0, 0 }, HIGH_SPD);
+    // move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
+    set_all_LED(CRGB::Teal);
+    FastLED.show();
 }
 
 void loop() {
@@ -90,28 +101,75 @@ void loop() {
     }
 
     /* After handshake complete */
-    rsw_state_update();
+    BoardPosition pos;
+    if (Serial.available()) {
+        String command = Serial.readStringUntil('\n');
 
-    // [FIX-COMM]
-    if (read_op_from_serial() == Ops::READ_SENSOR) {
-        rsw_state_display();
-    }
-
-    bool result[8][8];
-    bool result2[8][8];
-    transpose(rsw_state, result2);
-    filp_row(result2, result);
-
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            if (result[i][j]) {
-                set_LED_xy(i + 1, j + 1, CRGB::Gold);
-            } else {
-                set_LED_xy(i + 1, j + 1, CRGB::Turquoise);
+        // [FIX-COMM]
+        // if (read_op_from_serial() == Ops::READ_SENSOR) {
+        if (command == "move") {
+            Serial.println("Enter move control, input x and y to move");
+            while (!Serial.available()) {
+                delay(10);
             }
+            
+            pos.x = Serial.parseFloat();
+            Serial.print("x: ");
+            Serial.println(pos.x);
+            while (!Serial.available()) {
+                delay(10);
+            }
+            pos.y = Serial.parseFloat();
+            Serial.print("y: ");
+            Serial.println(pos.y);
+            BoardPosition pos2 = rotate_cw(pos, BoardPosition {4.5, 4.5});
+            Serial.print(pos2.x);
+            Serial.print(" ");
+            Serial.println(pos2.y);
+            move_to_board_position(pos2, HIGH_SPD);
+            clear_LED();
+            set_all_LED(CRGB::Teal);
+            set_LED_xy(pos2.x, pos2.y, CRGB::Gold);
+            FastLED.show();
+        } else if (command == "magnet") {
+            Serial.println("Enter magnet control, 1 for on, 0 for off:");
+            while (!Serial.available()) {
+                delay(10);
+            }
+            int magnet_state = Serial.parseInt();
+            if (magnet_state == 1) {
+                Serial.println("on");
+                magnet_on();
+            } else {
+                Serial.println("off");
+                magnet_off();
+            }
+        } else if (command == "end") {
+            Serial.println("End");
+            Serial.flush(); 
+            exit(0);
+        } else {
+            Serial.println("Invalid command");
         }
+    // }
+
+    // rsw_state_update();
+    // bool result[8][8];
+    // bool result2[8][8];
+    // transpose(rsw_state, result2);
+    // filp_row(result2, result);
+
+    // for (int i = 0; i < 8; i++) {
+    //     for (int j = 0; j < 8; j++) {
+    //         if (result[i][j]) {
+    //             set_LED_xy(i + 1, j + 1, CRGB::Gold);
+    //         } else {
+    //             set_LED_xy(i + 1, j + 1, CRGB::Turquoise);
+    //         }
+    //     }
+    // }
+    // FastLED.show();
     }
-    FastLED.show();
 }
 
 void transpose(bool matrix[8][8], bool result[8][8]) {
@@ -130,7 +188,19 @@ void filp_row(bool matrix[8][8], bool result[8][8]) {
     }
 }
 
+BoardPosition rotate_ccw(BoardPosition vec, BoardPosition center) {
+    BoardPosition result;
+    result.x = center.x - (vec.y - center.y);
+    result.y = center.y + (vec.x - center.x);
+    return result;
+}
 
+BoardPosition rotate_cw(BoardPosition vec, BoardPosition center) {
+    BoardPosition result;
+    result.x = center.x + (vec.y - center.y);
+    result.y = center.y - (vec.x - center.x);
+    return result;
+}
 
 
 
@@ -175,6 +245,16 @@ void set_LED_ith(int i, CRGB color) {
         i = 7 - (i % 8);
     }
     leds[i] = color;
+}
+
+void clear_LED() {
+    set_all_LED(CRGB::Black);
+}
+
+void set_all_LED(CRGB color) {
+    for (int i = 0; i < NUM_LEDS; i++) {
+        leds[i] = color;
+    }
 }
 
 
@@ -223,6 +303,18 @@ void rsw_state_display() {
 }
 
 // =================== Stepper Motor Functions ===================
+
+void test_limit_sw() {
+    Serial.println("Testing limit switch...");
+    while (true) {
+        if (digitalRead(LIMIT_SW_PIN) == HIGH) {
+            Serial.println("Limit switch is triggered");
+        } else {
+            Serial.println("Limit switch is not triggered");
+        }
+        delay(1000);
+    }
+}
 
 /*
 * The setup() function in CoreXY
@@ -282,9 +374,18 @@ void calibration() {
     // Reset the current position
     current_pos.x = -OFFSET_X;
     current_pos.y = -OFFSET_Y;
-    
-    Serial.println("CALIBRATION DONE");
 
+}
+
+void move_to_board_position(BoardPosition board_pos, int speed) {
+    if (board_pos.x == 0 || board_pos.y == 0) {
+        Serial.println("0, 0 not reachable!");
+        return;
+    }
+    Position target_pos;
+    target_pos.x = -25 + (int) (board_pos.x * 50);
+    target_pos.y = -25 + (int) (board_pos.y * 50);
+    move_to(target_pos, speed);
 }
 
 
@@ -311,7 +412,7 @@ void move_to(Position target_pos, int speed) {
         return;
     }
     // Calibrate if not calibrated yet
-    if (current_pos.x == -1 && current_pos.y == -1) {
+    if (current_pos.x == -OFFSET_X && current_pos.y == -OFFSET_Y) {
         calibration();
     }
     // Calculate the distance to move
@@ -466,11 +567,29 @@ void move_single_motor(StepperMotor motor, long step, int speed, bool direction)
 
 
 // ================== Electromagnet Functions ==================
+/*
+* The test function for the electromagnet
+* Put into the loop() to run the test
+*/
+void magnet_test() {
+    if (Serial.available()){
+        int state = Serial.parseInt();
+        if (state == 1){
+            Serial.println("MAGNET ON");
+            magnet_on();
+        }
+
+        if (state == -1){
+            Serial.println("MAGNET OFF");
+            magnet_off();
+        }
+    }
+}
 
 /*
 * The setup function for the electromagnet
 */
-void electromagnet_setup() {
+void magnet_setup() {
     pinMode(ELECTROMAGNET_PIN, OUTPUT);
     magnet_off();
 }
@@ -478,12 +597,14 @@ void electromagnet_setup() {
 * Turn on the electromagnet
 */
 void magnet_on() {
-    digitalWrite(ELECTROMAGNET_PIN, HIGH);
+    int sensorValue = analogRead(MAGNET_READ_PIN);
+    int outputValue = map(sensorValue, 0, 1023, 0 , 255);
+    analogWrite(ELECTROMAGNET_PIN, outputValue);
 }
 
 /*
 * Turn off the electromagnet
 */
 void magnet_off() {
-    digitalWrite(ELECTROMAGNET_PIN, LOW);
+    analogWrite(ELECTROMAGNET_PIN, 0);
 }
