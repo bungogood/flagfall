@@ -3,7 +3,7 @@
 #[cfg(windows)]
 const MASTER_PROGRAM_PATH: &str = "target\\release\\master-program.exe";
 #[cfg(unix)]
-const MASTER_PROGRAM_PATH: &str = "target/release/master-program";
+const MASTER_PROGRAM_PATH: &str = "./master-program";
 
 fn main() {
     // become the master program using our stdin and stdout

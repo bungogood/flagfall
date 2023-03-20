@@ -14,7 +14,7 @@ use std::io::Write;
 #[cfg(windows)]
 const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper.exe";
 #[cfg(unix)]
-const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper";
+const OPPONENT_WRAPPER_EXE_PATH: &str = "./opponent-wrapper";
 
 // 1. SETUP BOARD (kinda handwaved, user probably does it)
 // 2. SETUP GAME PARAMETERS (time control, human playing colour, etc)
