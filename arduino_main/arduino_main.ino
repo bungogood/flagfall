@@ -89,6 +89,7 @@ void setup() {
     move_to(Position { 0, 0 }, HIGH_SPD);
     // move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
     set_all_LED(CRGB::Teal);
+    rsw_LED_update(CRGB::Purple);
     FastLED.show();
 }
 
@@ -126,9 +127,10 @@ void loop() {
             Serial.print(pos2.x);
             Serial.print(" ");
             Serial.println(pos2.y);
-            move_to_board_position(pos2, HIGH_SPD);
+            move_to_board_position(pos2, LOW_SPD);
             clear_LED();
             set_all_LED(CRGB::Teal);
+            rsw_LED_update(CRGB::Purple);
             set_LED_xy(pos2.x, pos2.y, CRGB::Gold);
             FastLED.show();
         } else if (command == "magnet") {
@@ -151,24 +153,22 @@ void loop() {
         } else {
             Serial.println("Invalid command");
         }
-    // }
+    }
 
-    // rsw_state_update();
-    // bool result[8][8];
-    // bool result2[8][8];
-    // transpose(rsw_state, result2);
-    // filp_row(result2, result);
+}
 
-    // for (int i = 0; i < 8; i++) {
-    //     for (int j = 0; j < 8; j++) {
-    //         if (result[i][j]) {
-    //             set_LED_xy(i + 1, j + 1, CRGB::Gold);
-    //         } else {
-    //             set_LED_xy(i + 1, j + 1, CRGB::Turquoise);
-    //         }
-    //     }
-    // }
-    // FastLED.show();
+void rsw_LED_update(CRGB color) {
+    rsw_state_update();
+    bool result[8][8];
+    bool result2[8][8];
+    transpose(rsw_state, result2);
+    filp_row(result2, result);
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (result[i][j]) {
+                set_LED_xy(i + 1, j + 1, color);
+            }
+        }
     }
 }
 
