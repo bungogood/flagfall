@@ -7,7 +7,7 @@ use shakmaty::{
     san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
     Square,
 };
-use std::io::{BufReader, BufRead};
+use std::io::{BufReader, BufRead, Read};
 use std::io::Write;
 
 // handle exe paths on windows & unix
@@ -15,6 +15,7 @@ use std::io::Write;
 const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper.exe";
 #[cfg(unix)]
 const OPPONENT_WRAPPER_EXE_PATH: &str = "./opponent-wrapper";
+const SERIAL_COMMS_EXE_PATH:     &str = "./serial-communicator"; 
 
 // 1. SETUP BOARD (kinda handwaved, user probably does it)
 // 2. SETUP GAME PARAMETERS (time control, human playing colour, etc)
@@ -38,6 +39,22 @@ fn main() -> anyhow::Result<()> {
     let mut state = State::Idle;
     info!("Entered starting position: {fen}", fen = pos.board());
 
+    // Setup serial connection to Arduino
+    let mut serial_comms_proc = std::process::Command::new(SERIAL_COMMS_EXE_PATH)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .with_context(|| format!("Failed to start serial-communicator at {SERIAL_COMMS_EXE_PATH}"))?; 
+    let mut serial_comms_stdin = serial_comms_proc
+        .stdin
+        .take()
+        .with_context(|| "Failed to get stdin from created serial-communicator process")?; 
+    let mut serial_comms_stdout = BufReader::new(serial_comms_proc
+        .stdout
+        .take() 
+        .with_context(|| "Failed to get stdout from created serial-communicator process")?
+    ); 
+
     // STEP 2: SETUP GAME PARAMETERS
     let mut opponent_wrapper_proc = std::process::Command::new(OPPONENT_WRAPPER_EXE_PATH)
         .arg("-e")
@@ -45,7 +62,6 @@ fn main() -> anyhow::Result<()> {
         .stdout(std::process::Stdio::piped())
         .spawn()
         .with_context(|| format!("Failed to start opponent wrapper at {OPPONENT_WRAPPER_EXE_PATH}"))?;
-    
     let opponent_wrapper_stdout = opponent_wrapper_proc
         .stdout
         .take()
@@ -91,7 +107,8 @@ fn main() -> anyhow::Result<()> {
     };
 
     // Right now the program is set to loop through the input from the reed switches ONLY
-    'game_loop: loop {
+    'game_loop: 
+    loop {
         if let Some(outcome) = pos.outcome() {
             info!("game ended with {outcome}");
             send_line("quit");
@@ -103,13 +120,19 @@ fn main() -> anyhow::Result<()> {
                 let newstate = state;
 
                 // This is input from REED SWITCHES
-                let mut buf = String::new();
+                let mut buf: Vec<u8> = Vec::with_capacity(32); 
                 let instruction = loop {
                     buf.clear();
-                    std::io::stdin().read_line(&mut buf).unwrap();
-                    let line = buf.trim();
+                    
+                    // [REFACTOR] Maybe abstract away this whole procedure? 
+                    serial_comms_stdin.write("WRITE REQUEST_SENSOR\n".as_bytes())?; 
+                    serial_comms_stdin.write("READ\n".as_bytes())?; 
+                    serial_comms_stdout.read_until(b'\n', &mut buf)?;
+                    buf.pop(); // Remove '\n' 
+
+                    let line = format!("{:?}", buf); 
                     info!("received line: {line}");
-                    if matches!(line, "\x04" | "-1" | "quit" | "exit") {
+                    if matches!(line.as_str(), "\x04" | "-1" | "quit" | "exit") {
                         info!("received quit signal, exiting");
                         send_line("quit");
                         break 'game_loop;
@@ -135,8 +158,12 @@ fn main() -> anyhow::Result<()> {
             }
         } else {
             let move_from_opponent = recv_line();
-            let san: San = move_from_opponent.parse().with_context(|| "Moves from opponent should always be valid SAN.")?;
-            let mv = san.to_move(&pos).with_context(|| "SANs from opponent should always be legal moves.")?;
+            let san: San = move_from_opponent
+                .parse()
+                .with_context(|| "Moves from opponent should always be valid SAN.")?;
+            let mv = san
+                .to_move(&pos)
+                .with_context(|| "SANs from opponent should always be legal moves.")?;
             info!("got move {mv} from opponent wrapper");
             pos = pos.play(&mv).unwrap();
             print_board_from_fen(&pos.board().to_string());

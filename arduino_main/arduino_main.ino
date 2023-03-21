@@ -292,14 +292,29 @@ void rsw_state_update() {
 * Display the state of reed switches
 */
 void rsw_state_display() {
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            Serial.print(rsw_state[i][j]);
-            Serial.print(" ");
-        }
-        Serial.println();
+    Serial.println(rsw_state[0][0]); 
+    
+    // for (int i = 0; i < 8; i++) {
+    //     for (int j = 0; j < 8; j++) {
+    //         Serial.print(rsw_state[i][j]);
+    //         Serial.print(" ");
+    //     }
+    //     Serial.println();
+    // }
+    // Serial.println();
+}
+
+/*
+ * Display the states of reed switches along one row
+ */
+void rsw_row_state_display(size_t row) {
+    uint8_t buffer[9] {0}; 
+    for (size_t i = 0; i < 8; i++) {
+        buffer[i] = rsw_state[row][i]; 
     }
-    Serial.println();
+    Serial.println(buffer[0]); 
+    // Serial.write(buffer, 8); 
+    // Serial.println(); 
 }
 
 // =================== Stepper Motor Functions ===================
