@@ -80,6 +80,15 @@ typedef struct BoardPosition {
 
 void setup() {
     Serial.begin(115200);
+    /* [comm] handshake */
+    while (!handshake_flag) {
+        handshake_flag = handshake(); 
+        if (handshake_flag) {
+            Serial.println("Listening..."); 
+            break; 
+        }
+    }
+
     LED_setup(16);
     rsw_setup();
     magnet_setup();
@@ -94,14 +103,6 @@ void setup() {
 }
 
 void loop() {
-    /* [comm] handshake */
-    if (!handshake_flag) {
-        handshake_flag = handshake(); 
-        if (!handshake_flag) return; 
-        Serial.println("Listening..."); 
-    }
-
-    /* After handshake complete */
     BoardPosition pos;
     if (Serial.available()) {
         String command = Serial.readStringUntil('\n');
