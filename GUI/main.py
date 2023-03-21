@@ -2,7 +2,6 @@ import pygame
 import pygame_gui
 from pygame_gui.core import ObjectID
 import chess.svg
-from cairosvg import svg2png
 
 pygame.init()
 
