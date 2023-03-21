@@ -130,9 +130,9 @@ fn main() -> anyhow::Result<()> {
                     serial_comms_stdout.read_until(b'\n', &mut buf)?;
                     buf.pop(); // Remove '\n' 
 
-                    let line = format!("{:?}", buf); 
+                    let line = String::from_utf8_lossy(&buf); 
                     info!("received line: {line}");
-                    if matches!(line.as_str(), "\x04" | "-1" | "quit" | "exit") {
+                    if matches!(line.as_ref(), "\x04" | "-1" | "quit" | "exit") {
                         info!("received quit signal, exiting");
                         send_line("quit");
                         break 'game_loop;
