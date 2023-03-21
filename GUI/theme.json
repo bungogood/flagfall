@@ -223,7 +223,44 @@
              }
 
          }
+     },
+     "#settings_button":
+     {
+         "images":
+         {
+             "normal_image": {
+                 "path": "Icons/settings.png"
+             },
+             "hovered_image": {
+                 "path": "Icons/settings.png"
+             },
+             "selected_image": {
+                 "path": "Icons/settings.png"
+             },
+             "disabled_image": {
+                 "path": "Icons/settings.png"
+             }
+
+         }
+     },
+     "#local_button":
+     {
+         "images":
+         {
+             "normal_image": {
+                 "path": "Icons/local.png"
+             },
+             "hovered_image": {
+                 "path": "Icons/local.png"
+             },
+             "selected_image": {
+                 "path": "Icons/local.png"
+             },
+             "disabled_image": {
+                 "path": "Icons/local.png"
+             }
+
+         }
      }
-     
  }
 
