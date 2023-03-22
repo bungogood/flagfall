@@ -27,6 +27,14 @@
              "unfilled_bar":"#CCCCCC"
          }
      },
+     "text_entry_line":
+     {
+         "misc":
+         {
+             "shape": "rounded_rectangle",
+             "shape_corner_radius": 20
+         }
+     },
      "button":
      {
          "colours":
@@ -56,7 +64,7 @@
          {
              "shape": "rounded_rectangle",
              "shape_corner_radius": "10",
-             "border_width": "10",
+             "border_width": "5",
              "shadow_width": "20",
              "tool_tip_delay": "1.0",
              "text_horiz_alignment": "center",
@@ -261,6 +269,13 @@
              }
 
          }
+     },
+     "@small_buttons":
+     {
+        "misc":
+        {
+            "text_vert_alignment": "center"
+        }
      }
  }
 
