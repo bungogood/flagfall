@@ -119,6 +119,10 @@ fn main() -> anyhow::Result<()> {
                 // STEP 3: READ REED-SWITCH OUTPUT
                 let newstate = state;
 
+                //=========================================
+                //TODO: SEND REQUEST FOR REED SWITCHES HERE
+                //=========================================
+                
                 // This is input from REED SWITCHES
                 let mut buf: Vec<u8> = Vec::with_capacity(32); 
                 let instruction = loop {
@@ -137,14 +141,16 @@ fn main() -> anyhow::Result<()> {
                         send_line("quit");
                         break 'game_loop;
                     }
-                    if let Ok(instruction) = line.parse::<u32>() {
+                    if let Ok(instruction) = line.parse::<u64>() {
                         break instruction;
                     }
                     error!("received invalid instruction: {line}, expected square co-ordinates or -1 to end turn");
                 };
 
                 let mv;
-                (state, mv) = update_state(&pos, instruction, newstate);
+                //IMPORTANT: Right now it's only taking the first changed square, update so it loops over them
+                let actual_instruction = get_changed_square_number(pos.board().occupied(),  instruction)[0];
+                (state, mv) = update_state(&pos, actual_instruction, newstate);
                 let copied_pos = pos.clone();
                 if let Some(mv) = mv {
                     info!("got full move, playing {mv}");
@@ -185,6 +191,24 @@ fn main() -> anyhow::Result<()> {
     info!("opponent wrapper exited with status {status}", status = opponent_wrapper_output);
 
     Ok(())
+}
+
+fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32>{
+    let mut difference = prev.toggled(Bitboard(current));
+    let mut changed = difference.first();
+    let mut output: Vec<u32> =Vec::new();
+    while(changed != None){
+        output.push(square_to_number(changed.unwrap()));
+        difference = difference.without(Bitboard::from_square(changed.unwrap()));
+        changed = difference.first();
+    }
+    return output;
+}
+//18446462598732902399
+//18446462598733955071
+
+fn square_to_number(square: Square) -> u32{
+    return (((rank_to_float(square.rank())-1.0) * 8.0 + file_to_float(square.file())-1.0) as u32)
 }
 
 #[allow(clippy::too_many_lines)]
