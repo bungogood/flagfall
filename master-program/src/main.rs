@@ -129,8 +129,8 @@ fn main() -> anyhow::Result<()> {
                     
                     // [REFACTOR] Maybe abstract away this whole procedure? 
                     //>>> reed switch request
-                    serial_comms_stdin.write("WRITE REQUEST_SENSOR\n".as_bytes())?; 
-                    serial_comms_stdin.write("READ\n".as_bytes())?; 
+                    serial_comms_stdin.write_all(b"WRITE REQUEST_SENSOR\n")?; 
+                    serial_comms_stdin.write_all(b"READ\n")?; 
                     //<<< reed switch data
                     serial_comms_stdout.read_line(&mut line)?; 
 
