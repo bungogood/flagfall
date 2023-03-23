@@ -13,8 +13,11 @@ use std::io::Write;
 // handle exe paths on windows & unix
 #[cfg(windows)]
 const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper.exe";
+#[cfg(windows)]
+const SERIAL_COMMS_EXE_PATH:     &str = "serial-communicator.exe"; 
 #[cfg(unix)]
 const OPPONENT_WRAPPER_EXE_PATH: &str = "./opponent-wrapper";
+#[cfg(unix)]
 const SERIAL_COMMS_EXE_PATH:     &str = "./serial-communicator"; 
 
 // 1. SETUP BOARD (kinda handwaved, user probably does it)
