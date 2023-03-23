@@ -29,6 +29,28 @@ private:
 
 /**
  * @brief 
+ * Checks the first byte of an instruction to determine its operation variant. 
+ * 
+ * @param serial_read_buffer Array of bytes representing the read instruction.
+ * @return Corresponding `OpKind` enumeration type. 
+ */
+OpKind get_opkind(const uint8_t* serial_read_buffer) {
+    switch(*serial_read_buffer) {
+        case SENSOR: 
+            return Sensor; 
+        case MAGNET: 
+            return Magnet; 
+        case LED: 
+            return Led; 
+        case QUIT: 
+            return Quit; 
+        default: 
+            return Noop; 
+    }
+}
+
+/**
+ * @brief 
  * Parser for parsing an `Operation` of `Ops::Led` kind into a heap-allocated 
  * CRGB instance. 
  * 
@@ -40,12 +62,6 @@ CRGB* Operation::try_into_CRGB() {
         return NULL; 
     }
     return new CRGB(data[0], data[1], data[2]);  
-}
-
-size_t write_qword_in_bytes(const uint64_t& value) {
-    uint64_t tmp = value; 
-    uint8_t* tmp_as_byte_base = (uint8_t*)&tmp; 
-    return Serial.write(tmp_as_byte_base, sizeof(uint64_t)); 
 }
 
 /**

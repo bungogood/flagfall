@@ -7,7 +7,7 @@ use shakmaty::{
     san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
     Square,
 };
-use std::io::{BufReader, BufRead, Read};
+use std::io::{BufReader, BufRead};
 use std::io::Write;
 
 // handle exe paths on windows & unix
@@ -145,7 +145,7 @@ fn main() -> anyhow::Result<()> {
                     if let Ok(instruction) = line.parse::<u64>() {
                         break instruction;
                     }
-                    error!("received invalid instruction: {line}, expected square co-ordinates or -1 to end turn");
+                    error!("received invalid instruction: \"{line}\", expected square co-ordinates or -1 to end turn");
                 };
 
                 let mv;

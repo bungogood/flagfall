@@ -1,5 +1,5 @@
 #include <FastLED.h>
-#include "lib/communication.h"
+#include "lib/communication.hpp"
 
 // ===================== Serial-comm Configuration =====================
 bool volatile handshake_flag = false; 
@@ -108,7 +108,7 @@ void loop() {
         String command = Serial.readStringUntil('\n');
 
         // [FIX-COMM]
-        // if (read_op_from_serial() == Ops::READ_SENSOR) {
+        // if (read_op_from_serial() == OpKind::READ_SENSOR) {
         if (command == "move") {
             Serial.println("Enter move control, input x and y to move");
             while (!Serial.available()) {
