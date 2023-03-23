@@ -123,19 +123,17 @@ fn main() -> anyhow::Result<()> {
                 let newstate = state;
                 
                 // This is input from REED SWITCHES
-                let mut buf: Vec<u8> = Vec::with_capacity(32); 
+                let mut line = String::with_capacity(32);
                 let instruction = loop {
-                    buf.clear();
+                    line.clear();
                     
                     // [REFACTOR] Maybe abstract away this whole procedure? 
                     //>>> reed switch request
                     serial_comms_stdin.write("WRITE REQUEST_SENSOR\n".as_bytes())?; 
                     serial_comms_stdin.write("READ\n".as_bytes())?; 
                     //<<< reed switch data
-                    serial_comms_stdout.read_until(b'\n', &mut buf)?;
-                    buf.pop(); // Remove '\n' 
+                    serial_comms_stdout.read_line(&mut line)?; 
 
-                    let line = String::from_utf8_lossy(&buf); 
                     info!("received line: {line}");
                     if matches!(line.as_ref(), "\x04" | "-1" | "quit" | "exit") {
                         info!("received quit signal, exiting");
