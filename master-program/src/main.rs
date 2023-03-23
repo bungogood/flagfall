@@ -118,10 +118,6 @@ fn main() -> anyhow::Result<()> {
             loop {
                 // STEP 3: READ REED-SWITCH OUTPUT
                 let newstate = state;
-
-                //=========================================
-                //TODO: SEND REQUEST FOR REED SWITCHES HERE
-                //=========================================
                 
                 // This is input from REED SWITCHES
                 let mut buf: Vec<u8> = Vec::with_capacity(32); 
@@ -129,8 +125,10 @@ fn main() -> anyhow::Result<()> {
                     buf.clear();
                     
                     // [REFACTOR] Maybe abstract away this whole procedure? 
+                    //>>> reed switch request
                     serial_comms_stdin.write("WRITE REQUEST_SENSOR\n".as_bytes())?; 
                     serial_comms_stdin.write("READ\n".as_bytes())?; 
+                    //<<< reed switch data
                     serial_comms_stdout.read_until(b'\n', &mut buf)?;
                     buf.pop(); // Remove '\n' 
 
@@ -152,6 +150,23 @@ fn main() -> anyhow::Result<()> {
                 let actual_instruction = get_changed_square_number(pos.board().occupied(),  instruction)[0];
                 (state, mv) = update_state(&pos, actual_instruction, newstate);
                 let copied_pos = pos.clone();
+
+                //===================================
+                //LED sending here
+                //===================================
+                let rgb_data = rgb_to_str(get_rgb(&pos, state));
+                info!("sending led data {rgb_data} to serializer");
+                //>>>LED data
+                writeln!(serial_comms_stdin, "{rgb_data}").unwrap();
+                //<<< Acknowledgement
+                let mut ack_buf: Vec<u8> = Vec::with_capacity(32); 
+                loop{
+                    serial_comms_stdout.read_until(b'\n', &mut ack_buf)?;
+                    if(!ack_buf.is_empty()){
+                        break;
+                    }
+                }
+
                 if let Some(mv) = mv {
                     info!("got full move, playing {mv}");
                     pos = copied_pos.play(&mv).unwrap();
@@ -178,6 +193,19 @@ fn main() -> anyhow::Result<()> {
 
             let steps = move_to_steps(mv, pos.turn(), f64::from(captured_whites), f64::from(captured_blacks));
             info!("produced steps: {steps:?}", steps = steps);
+
+            let step_data = steps_to_str(steps);
+            info!("sending step data {step_data} to serializer");
+            //>>> step data
+            write!(serial_comms_stdin, "{step_data}").unwrap();
+            //<<< step complete
+            let mut complete_buf: Vec<u8> = Vec::with_capacity(32); 
+            loop{
+                serial_comms_stdout.read_until(b'\n', &mut complete_buf)?;
+                if(!complete_buf.is_empty()){
+                    break;
+                }
+            }
         }
     }
 
@@ -191,6 +219,40 @@ fn main() -> anyhow::Result<()> {
     info!("opponent wrapper exited with status {status}", status = opponent_wrapper_output);
 
     Ok(())
+}
+
+fn steps_to_str(steps: Vec<Step>) -> String{
+    let mut output =  String::from("WRITE");
+    for step in steps{
+        let x = step.x.to_string();
+        let y = step.y.to_string();
+        let magnet = step.magnet.to_string();
+        output = format!("{output} 0x02 {x} {y} {magnet}");
+    }
+    return output
+}
+
+fn rgb_to_str(rgb: RGB) -> String{
+    let mut output =  String::from("WRITE LED");
+    let rs = rgb.r;
+    let rs2 =  format!("{rs:064b}");
+    let gs = rgb.g;
+    let gs2 =  format!("{gs:064b}");
+    let bs = rgb.b;
+    let bs2 =  format!("{bs:064b}");
+    for ((r,g),b) in rs2.chars().zip(gs2.chars()).zip(bs2.chars()){
+        match ((r,g),b) {
+            (('1','0'),'0') => output.push_str(" 0xFF0000"),
+            (('0','1'),'0') => output.push_str(" 0x008000"),
+            (('0','0'),'1') => output.push_str(" 0x0000FF"),
+            (('1','1'),'0') => output.push_str(" 0xFFFF00"),
+            (('1','0'),'1') => output.push_str(" 0x800080"),
+            (('1','1'),'1') => output.push_str(" 0xFFFFFF"),
+            (('0','1'),'1') => output.push_str(" 0x40E0D0"),
+            (_,_) => output.push_str(" 0x000000"),
+        }
+    }
+    return output;
 }
 
 fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32>{
