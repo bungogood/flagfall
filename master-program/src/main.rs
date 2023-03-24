@@ -7,7 +7,7 @@ use shakmaty::{
     san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
     Square,
 };
-use std::io::{BufReader, BufRead};
+use std::io::{BufReader, BufRead, Read};
 use std::io::Write;
 
 // handle exe paths on windows & unix
@@ -123,32 +123,18 @@ fn main() -> anyhow::Result<()> {
                 let newstate = state;
                 
                 // This is input from REED SWITCHES
-                let mut line = String::with_capacity(32);
-                let instruction = loop {
-                    line.clear();
-                    
-                    // [REFACTOR] Maybe abstract away this whole procedure? 
-                    //>>> reed switch request
-                    serial_comms_stdin.write_all(b"WRITE REQUEST_SENSOR\n")?; 
-                    serial_comms_stdin.write_all(b"READ\n")?; 
-                    //<<< reed switch data
-                    serial_comms_stdout.read_line(&mut line)?; 
-
-                    info!("received line: {line}");
-                    if matches!(line.as_ref(), "\x04" | "-1" | "quit" | "exit") {
-                        info!("received quit signal, exiting");
-                        send_line("quit");
-                        break 'game_loop;
-                    }
-                    if let Ok(instruction) = line.parse::<u64>() {
-                        break instruction;
-                    }
-                    error!("received invalid instruction: \"{line}\", expected square co-ordinates or -1 to end turn");
-                };
+                // let reed_bitset: u64; 
+                let mut buf: [u8; 8] = [0; 8]; 
+                serial_comms_stdin.write_all(b"WRITE SENSOR\n")?; 
+                serial_comms_stdin.write_all(b"READ\n")?; 
+                // [TODO] Refactor to async-await
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                serial_comms_stdout.read_exact(&mut buf)?; 
+                let reed_bitset = u64::from_le_bytes(buf);
 
                 let mv;
                 //IMPORTANT: Right now it's only taking the first changed square, update so it loops over them
-                let actual_instruction = get_changed_square_number(pos.board().occupied(),  instruction)[0];
+                let actual_instruction = get_changed_square_number(pos.board().occupied(), reed_bitset)[0];
                 (state, mv) = update_state(&pos, actual_instruction, newstate);
                 let copied_pos = pos.clone();
 
@@ -157,7 +143,7 @@ fn main() -> anyhow::Result<()> {
                 //===================================
                 let rgb_data = rgb_to_str(get_rgb(&pos, state));
                 info!("sending led data {rgb_data} to serializer");
-                //>>>LED data
+                //>>> LED data
                 writeln!(serial_comms_stdin, "{rgb_data}").unwrap();
                 //<<< Acknowledgement
                 let mut ack_buf: Vec<u8> = Vec::with_capacity(32); 
@@ -223,12 +209,12 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn steps_to_str(steps: Vec<Step>) -> String{
-    let mut output =  String::from("WRITE");
+    let mut output =  String::from("WRITE MAGNET");
     for step in steps{
         let x = step.x.to_string();
         let y = step.y.to_string();
         let magnet = step.magnet.to_string();
-        output = format!("{output} 0x02 {x} {y} {magnet}");
+        output = format!("{output} {x} {y} {magnet}");
     }
     return output
 }
