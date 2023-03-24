@@ -7,7 +7,7 @@ use shakmaty::{
     san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
     Square,
 };
-use std::io::{BufReader, BufRead, Read};
+use std::io::{BufReader, BufRead, Read, ErrorKind};
 use std::io::Write;
 
 // handle exe paths on windows & unix
@@ -109,6 +109,8 @@ fn main() -> anyhow::Result<()> {
         stdout_lines.next().unwrap().unwrap()
     };
 
+    // std::thread::sleep(std::time::Duration::from_secs(5));
+
     // Right now the program is set to loop through the input from the reed switches ONLY
     'game_loop: 
     loop {
@@ -118,6 +120,7 @@ fn main() -> anyhow::Result<()> {
             break 'game_loop;
         }
         if pos.turn() == player_turn {
+            let mut prev_bitset: Bitboard = Bitboard(0xffff_0000_0000_ffff);
             loop {
                 // STEP 3: READ REED-SWITCH OUTPUT
                 let newstate = state;
@@ -125,16 +128,28 @@ fn main() -> anyhow::Result<()> {
                 // This is input from REED SWITCHES
                 // let reed_bitset: u64; 
                 let mut buf: [u8; 8] = [0; 8]; 
+                let mut user_input_2 = String::new(); 
+                std::io::stdin().read_line(&mut user_input_2).unwrap();
                 serial_comms_stdin.write_all(b"WRITE SENSOR\n")?; 
-                serial_comms_stdin.write_all(b"READ\n")?; 
                 // [TODO] Refactor to async-await
                 std::thread::sleep(std::time::Duration::from_secs(1));
-                serial_comms_stdout.read_exact(&mut buf)?; 
+                serial_comms_stdin.write_all(b"READ\n")?; 
+                // [TODO] Refactor to async-await
+                // while !serial_comms_stdout.read(buf) {
+                //     std::thread::sleep(std::time::Duration::from_secs(1));
+                //     eprintln!("[STEP 3] Waiting on serial_comms_stdout"); 
+                // }
+                
+                serial_comms_stdout.read_exact(&mut buf)?;
+                // eprintln!("[STEP 3] {:x?}", buf); 
                 let reed_bitset = u64::from_le_bytes(buf);
+                // eprintln!("[STEP 3] {:x}", reed_bitset); 
 
                 let mv;
                 //IMPORTANT: Right now it's only taking the first changed square, update so it loops over them
-                let actual_instruction = get_changed_square_number(pos.board().occupied(), reed_bitset)[0];
+                let actual_instruction = get_changed_square_number(prev_bitset, reed_bitset)[0];
+                prev_bitset = Bitboard(reed_bitset);
+                // eprintln!("[STEP 3] actual_instruction: {}", actual_instruction);
                 (state, mv) = update_state(&pos, actual_instruction, newstate);
                 let copied_pos = pos.clone();
 
@@ -142,24 +157,35 @@ fn main() -> anyhow::Result<()> {
                 //LED sending here
                 //===================================
                 let rgb_data = rgb_to_str(get_rgb(&pos, state));
-                info!("sending led data {rgb_data} to serializer");
+                // eprintln!("sending led data \"{rgb_data}\" to serializer");
                 //>>> LED data
                 writeln!(serial_comms_stdin, "{rgb_data}").unwrap();
+                // [TODO] Refactor to async-await
+                std::thread::sleep(std::time::Duration::from_secs(1));
                 //<<< Acknowledgement
-                let mut ack_buf: Vec<u8> = Vec::with_capacity(32); 
-                loop{
-                    serial_comms_stdout.read_until(b'\n', &mut ack_buf)?;
-                    if(!ack_buf.is_empty()){
-                        break;
+                let mut ack_buf = [0u8]; 
+                serial_comms_stdin.write_all(b"READ\n")?; 
+                while let Err(e) = serial_comms_stdout.read_exact(&mut ack_buf) {
+                    // Request read until non-err
+                    eprintln!("{:#?}", e); 
+                    if e.kind() == ErrorKind::TimedOut { 
+                        serial_comms_stdin.write_all(b"READ\n")?; 
+                    } else {
+                        unreachable!(); 
                     }
                 }
+                //     if !ack_buf.is_empty() {
+                //         break;
+                //     }
+                // }
+                // eprintln!("at here");                 
 
                 if let Some(mv) = mv {
                     info!("got full move, playing {mv}");
                     pos = copied_pos.play(&mv).unwrap();
                     print_board_from_fen(&pos.board().to_string());
                     let move_san = San::from_move(&pos, &mv).to_string();
-                    info!("sending move {move_san} to opponent wrapper");
+                    eprintln!("sending move {move_san} to opponent wrapper");
                     send_line(&move_san);
                     break;
                 }
@@ -182,15 +208,21 @@ fn main() -> anyhow::Result<()> {
             info!("produced steps: {steps:?}", steps = steps);
 
             let step_data = steps_to_str(steps);
-            info!("sending step data {step_data} to serializer");
+            eprintln!("sending step data {step_data} to serializer");
             //>>> step data
-            write!(serial_comms_stdin, "{step_data}").unwrap();
+            writeln!(serial_comms_stdin, "{step_data}").unwrap();
             //<<< step complete
-            let mut complete_buf: Vec<u8> = Vec::with_capacity(32); 
-            loop{
-                serial_comms_stdout.read_until(b'\n', &mut complete_buf)?;
-                if(!complete_buf.is_empty()){
-                    break;
+            let mut ack_buf = [0u8]; 
+            serial_comms_stdin.write_all(b"READ\n")?; 
+            // serial_comms_stdin.write_all(b"READ\n")?; 
+            while ack_buf == [0] {
+                // Request read until non-err
+                if let Err(e) = serial_comms_stdout.read_exact(&mut ack_buf) {
+                    if e.kind() == ErrorKind::TimedOut { 
+                        serial_comms_stdin.write_all(b"READ\n")?; 
+                    } else {
+                        unreachable!(); 
+                    }
                 }
             }
         }
@@ -228,15 +260,16 @@ fn rgb_to_str(rgb: RGB) -> String{
     let bs = rgb.b;
     let bs2 =  format!("{bs:064b}");
     for ((r,g),b) in rs2.chars().zip(gs2.chars()).zip(bs2.chars()){
+        output.push_str(" ");
         match ((r,g),b) {
-            (('1','0'),'0') => output.push_str(" 0xFF0000"),
-            (('0','1'),'0') => output.push_str(" 0x008000"),
-            (('0','0'),'1') => output.push_str(" 0x0000FF"),
-            (('1','1'),'0') => output.push_str(" 0xFFFF00"),
-            (('1','0'),'1') => output.push_str(" 0x800080"),
-            (('1','1'),'1') => output.push_str(" 0xFFFFFF"),
-            (('0','1'),'1') => output.push_str(" 0x40E0D0"),
-            (_,_) => output.push_str(" 0x000000"),
+            (('1','0'),'0') => output.push_str(&0xFF0000.to_string()),
+            (('0','1'),'0') => output.push_str(&0x008000.to_string()),
+            (('0','0'),'1') => output.push_str(&0x0000FF.to_string()),
+            (('1','1'),'0') => output.push_str(&0xFFFF00.to_string()),
+            (('1','0'),'1') => output.push_str(&0x800080.to_string()),
+            (('1','1'),'1') => output.push_str(&0xFFFFFF.to_string()),
+            (('0','1'),'1') => output.push_str(&0x40E0D0.to_string()),
+            (_,_) => output.push_str(&0x000000.to_string()),
         }
     }
     return output;
@@ -692,7 +725,7 @@ fn print_bitboard(bitboard: Bitboard) {
         line.push(' ');
     }
     output.push_str(line.chars().rev().collect::<String>().as_str());
-    println!("{}", output.as_str());
+    eprintln!("{}", output.as_str());
 }
 
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
