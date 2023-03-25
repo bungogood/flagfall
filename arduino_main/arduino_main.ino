@@ -147,6 +147,35 @@ void loop() {
 
         } else if (op.kind == OpKind::Magnet) {
             // CoreXY Movement
+            BoardPosition board_pos;
+            const uint8_t *curr_ptr = op.data;
+            // Move the magnet until the end of the data
+            while (curr_ptr < op.data + op.data_len()) {
+                // Read in a block of data
+                float x = *(float *) curr_ptr;
+                curr_ptr += 4;
+                float y = *(float *) curr_ptr; 
+                curr_ptr += 4;
+                bool magnet = (*curr_ptr) != 0;
+                curr_ptr += 1;
+
+                Serial.println(x);
+                Serial.println(y);
+                Serial.println(magnet);
+                if (magnet) {
+                    magnet_on();
+                } else {
+                    magnet_off();
+                }
+
+                // Conver the read position to a board position
+                board_pos = rotate(BoardPosition { x, y }, BoardPosition { 4.5, 4.5 });
+                // Make move
+                move_to_board_position(board_pos, HIGH_SPD);
+
+                delay(100); // Optional delay
+            }
+            magnet_off();
             write_ack();
 
         } else if (op.kind == OpKind::Led) {
@@ -201,7 +230,7 @@ void serial_input_demo() {
             pos.y = Serial.parseFloat();
             Serial.print("y: ");
             Serial.println(pos.y);
-            BoardPosition pos2 = rotate_cw(pos, BoardPosition {4.5, 4.5});
+            BoardPosition pos2 = rotate(pos, BoardPosition {4.5, 4.5});
             Serial.print(pos2.x);
             Serial.print(" ");
             Serial.println(pos2.y);
@@ -277,14 +306,7 @@ void filp_row(bool matrix[8][8], bool result[8][8]) {
     }
 }
 
-BoardPosition rotate_ccw(BoardPosition vec, BoardPosition center) {
-    BoardPosition result;
-    result.x = center.x - (vec.y - center.y);
-    result.y = center.y + (vec.x - center.x);
-    return result;
-}
-
-BoardPosition rotate_cw(BoardPosition vec, BoardPosition center) {
+BoardPosition rotate(BoardPosition vec, BoardPosition center) {
     BoardPosition result;
     result.x = center.x + (vec.y - center.y);
     result.y = center.y - (vec.x - center.x);
