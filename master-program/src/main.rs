@@ -110,7 +110,8 @@ fn main() -> anyhow::Result<()> {
     };
 
     // std::thread::sleep(std::time::Duration::from_secs(5));
-
+    //UPDATE THIS AFTER ENEMY MOVEMENT TOO
+    let mut prev_bitset: Bitboard = Bitboard(0xffff_0000_0000_ffff);
     // Right now the program is set to loop through the input from the reed switches ONLY
     'game_loop: 
     loop {
@@ -120,7 +121,6 @@ fn main() -> anyhow::Result<()> {
             break 'game_loop;
         }
         if pos.turn() == player_turn {
-            let mut prev_bitset: Bitboard = Bitboard(0xffff_0000_0000_ffff);
             loop {
                 // STEP 3: READ REED-SWITCH OUTPUT
                 let newstate = state;
@@ -129,27 +129,31 @@ fn main() -> anyhow::Result<()> {
                 // let reed_bitset: u64; 
                 let mut buf: [u8; 8] = [0; 8]; 
                 let mut user_input_2 = String::new(); 
-                std::io::stdin().read_line(&mut user_input_2).unwrap();
+                //Refactor to automatic reed switch change detection
+                //std::io::stdin().read_line(&mut user_input_2).unwrap();
                 serial_comms_stdin.write_all(b"WRITE SENSOR\n")?; 
                 // [TODO] Refactor to async-await
                 std::thread::sleep(std::time::Duration::from_secs(1));
                 serial_comms_stdin.write_all(b"READ\n")?; 
                 // [TODO] Refactor to async-await
-                // while !serial_comms_stdout.read(buf) {
-                //     std::thread::sleep(std::time::Duration::from_secs(1));
-                //     eprintln!("[STEP 3] Waiting on serial_comms_stdout"); 
-                // }
+                eprintln!("sent request");
+                while let Err(e) = serial_comms_stdout.read_exact(&mut buf) {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    eprintln!("[STEP 3] 
+                    
+                    Waiting on serial_comms_stdout"); 
+                }
                 
-                serial_comms_stdout.read_exact(&mut buf)?;
-                // eprintln!("[STEP 3] {:x?}", buf); 
+//                 serial_comms_stdout.read_exact(&mut buf)?;
+                //eprintln!("[STEP 3] {:x?}", buf); 
                 let reed_bitset = u64::from_le_bytes(buf);
-                // eprintln!("[STEP 3] {:x}", reed_bitset); 
+                eprintln!("[STEP 3] {:x}", reed_bitset); 
 
                 let mv;
                 //IMPORTANT: Right now it's only taking the first changed square, update so it loops over them
                 let actual_instruction = get_changed_square_number(prev_bitset, reed_bitset)[0];
                 prev_bitset = Bitboard(reed_bitset);
-                // eprintln!("[STEP 3] actual_instruction: {}", actual_instruction);
+                eprintln!("[STEP 3] actual_instruction: {}", actual_instruction);
                 (state, mv) = update_state(&pos, actual_instruction, newstate);
                 let copied_pos = pos.clone();
 
@@ -201,6 +205,7 @@ fn main() -> anyhow::Result<()> {
             info!("got move {mv} from opponent wrapper");
             pos = pos.play(&mv).unwrap();
             print_board_from_fen(&pos.board().to_string());
+            prev_bitset = pos.board().occupied();
 
             // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
 
@@ -279,7 +284,7 @@ fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32>{
     let mut difference = prev.toggled(Bitboard(current));
     let mut changed = difference.first();
     let mut output: Vec<u32> =Vec::new();
-    while(changed != None){
+    while changed != None{
         output.push(square_to_number(changed.unwrap()));
         difference = difference.without(Bitboard::from_square(changed.unwrap()));
         changed = difference.first();
@@ -290,7 +295,7 @@ fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32>{
 //18446462598733955071
 
 fn square_to_number(square: Square) -> u32{
-    return (((rank_to_float(square.rank())-1.0) * 8.0 + file_to_float(square.file())-1.0) as u32)
+    return ((rank_to_float(square.rank())-1.0) * 8.0 + file_to_float(square.file())-1.0) as u32
 }
 
 #[allow(clippy::too_many_lines)]
@@ -706,7 +711,7 @@ fn print_board_from_fen(fen: &str) {
         }
     }
     output.push_str(ENDLINES[0]);
-    println!("{output}");
+    eprintln!("{output}");
 }
 
 fn print_bitboard(bitboard: Bitboard) {
