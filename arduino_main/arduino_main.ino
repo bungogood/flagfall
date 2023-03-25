@@ -1,4 +1,5 @@
 #include <FastLED.h>
+#include "communication.hpp"
 
 // ====================== LED Configuration ======================
 #define LED_PIN 2
@@ -59,8 +60,13 @@ const int MAX_X = 500;
 const int MAX_Y = 560;
 const int MIN_X = 0;
 const int MIN_Y = 0;
-const int OFFSET_X = 7;
-const int OFFSET_Y = 5;
+const int OFFSET_X = 8;
+const int OFFSET_Y = 35;
+
+typedef struct BoardPosition {
+    float x;
+    float y;
+} BoardPosition;
 
 // ====================== Electromagnet Configuration ======================
 #define ELECTROMAGNET_PIN 3
@@ -69,27 +75,92 @@ const int OFFSET_Y = 5;
 
 // ====================== Main Program ======================
 
-typedef struct BoardPosition {
-    float x;
-    float y;
-} BoardPosition;
 
 void setup() {
     Serial.begin(115200);
+
     LED_setup(16);
     rsw_setup();
     magnet_setup();
     core_xy_setup();
-    // test_limit_sw();
-    calibration();
-    move_to(Position { 0, 0 }, HIGH_SPD);
+
+    // calibration();
+    // move_to(Position { 0, 0 }, HIGH_SPD);
     // move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
-    set_all_LED(CRGB::Teal);
-    rsw_LED_update(CRGB::Purple);
-    FastLED.show();
+
+
+    // rsw_state[0][0] = true;
+    // rsw_state[1][0] = true;
+    // rsw_state[2][0] = true;
+    // rsw_state[7][7] = true;
+    // rsw_state[4][4] = true;
+    // rsw_state_display();
+    // uint64_t res = rsw_state_to_uint64();
+    // print_uint64_t(res);
+    // Serial.write((uint8_t *) &res, sizeof(res));
 }
 
+
+uint8_t buffer[512];
+
 void loop() {
+    if (Serial.available()) {
+        size_t read_amnt = Serial.readBytes(buffer, 512);
+        Operation op(buffer, read_amnt);
+        if (op.kind == OpKind::Sensor) {
+            rsw_state_update();
+            uint64_t rsw_data = rsw_state_to_uint64();
+            // print_uint64_t(rsw_data);
+            write_sensor_data(rsw_data);
+        } else if (op.kind == OpKind::Magnet) {
+            delay(1000);
+            write_ack();
+        } else if (op.kind == OpKind::Led) {
+            // CRGB led_mat[8][8];
+            size_t r = 1; 
+            size_t c = 1;
+            // Serial.println(buffer[1]);
+            // Read in the data from op.data
+            for (auto data_ptr = op.data; data_ptr < op.data + op.data_len(); data_ptr += 3) {
+                // led_mat[r][c] = color; 
+                // Serial.println("Setting LED: " + String(r) + " " + String(c));
+                // Rotate c and r 90 degrees to the left
+                // set_LED_xy(9 - r, c, bytes_to_crgb(data_ptr));
+                set_LED_xy(9 - r, c, bytes_to_crgb(data_ptr));
+                // set_LED_xy()
+                c++; 
+                if (c == 9) { 
+                    c = 1; 
+                    r++; 
+                }
+            }
+
+
+            // Serial.println("LED Done");
+            // Display the LED matrix
+            // for (int i = 0; i < 64; i++) {
+            //     Serial.println("LED: " + String(i) + " " + String(leds[i].r) + " " + String(leds[i].g) + " " + String(leds[i].b));
+            // }
+            // set_LED_xy(2, 1, CRGB(255, 0, 0));
+            FastLED.show();
+            // Serial.println("LED Showed");
+            write_ack();
+        }
+    }
+}
+
+CRGB bytes_to_crgb(const uint8_t* base) {
+    return CRGB(base[0], base[1], base[2]); 
+}
+
+size_t write_sensor_data(const uint64_t &value) {
+    Serial.write((uint8_t *) &value, sizeof(value));
+}
+
+// ====================== General Helper Functions ======================
+
+void serial_input_demo() {
+
     BoardPosition pos;
     if (Serial.available()) {
         String command = Serial.readStringUntil('\n');
@@ -111,12 +182,14 @@ void loop() {
             Serial.print(pos2.x);
             Serial.print(" ");
             Serial.println(pos2.y);
-            move_to_board_position(pos2, LOW_SPD);
+            move_to_board_position(pos2, HIGH_SPD);
             clear_LED();
             set_all_LED(CRGB::Teal);
             rsw_LED_update(CRGB::Purple);
-            set_LED_xy(pos2.x, pos2.y, CRGB::Gold);
+            rsw_state_display();
+            set_LED_xy(pos2.x, pos2.y , CRGB::Gold);
             FastLED.show();
+
         } else if (command == "magnet") {
             Serial.println("Enter magnet control, 1 for on, 0 for off:");
             while (!Serial.available()) {
@@ -130,15 +203,24 @@ void loop() {
                 Serial.println("off");
                 magnet_off();
             }
+
         } else if (command == "end") {
             Serial.println("End");
             delay(100);
             exit(0);
+
         } else {
             Serial.println("Invalid command");
         }
     }
+}
 
+void rsw_LED_demo() {
+    rsw_state_update();
+    rsw_state_display();
+    set_all_LED(CRGB::Teal);
+    rsw_LED_update(CRGB::Purple);
+    FastLED.show();
 }
 
 void rsw_LED_update(CRGB color) {
@@ -188,6 +270,16 @@ BoardPosition rotate_cw(BoardPosition vec, BoardPosition center) {
 
 
 
+void print_uint64_t(uint64_t value) {
+    // Print the value bit by bit
+    for (int i = 63; i >= 0; i--) {
+        Serial.print((value & (1ULL << i)) ? "1" : "0");
+    }
+}
+
+
+
+
 // ====================== LED Functions ======================
 
 /*
@@ -211,12 +303,13 @@ void LED_setup(int brightness) {
 * @param y: Column number [1 - 8]
 */ 
 void set_LED_xy(int row, int col, CRGB color) {
-    row--;
-    col--;
-    if (col % 2 == 0) {
-        row = 7 - row;
+
+    int r = row - 1;
+    int c = col - 1;
+    if (c % 2 == 0) {
+        r = 7 - r;
     }
-    leds[(col * 8) + row] = color;
+    leds[(c * 8) + r] = color;
 }
 
 /*
@@ -284,6 +377,20 @@ void rsw_state_display() {
         Serial.println();
     }
     Serial.println();
+}
+
+uint64_t rsw_state_to_uint64() {
+    uint64_t result = 0;
+    int count = 0;
+    for (int j = 0; j < 8; j++) {
+        for (int i = 0; i < 8; i++) {
+            if (rsw_state[i][j]) {
+                result |= (uint64_t)1 << count;
+            }
+            count++;
+        }
+    }
+    return result;
 }
 
 // =================== Stepper Motor Functions ===================
@@ -368,7 +475,7 @@ void move_to_board_position(BoardPosition board_pos, int speed) {
     }
     Position target_pos;
     target_pos.x = -25 + (int) (board_pos.x * 50);
-    target_pos.y = -25 + (int) (board_pos.y * 50);
+    target_pos.y = 25 + (int) (board_pos.y * 50);
     move_to(target_pos, speed);
 }
 

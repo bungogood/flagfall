@@ -37,7 +37,7 @@ void make_move_seq(Operation &op) {
         float y = *(float *) buffer; 
         curr_ptr += 4;
         bool magnet = (*buffer) != 0;
-        curr_ptr += 1; // ??
+        curr_ptr += 1;
 
         if (magnet) {
             delay(10); // Magnet on
