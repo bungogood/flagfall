@@ -83,10 +83,13 @@ void setup() {
     rsw_setup();
     magnet_setup();
     core_xy_setup();
+    set_all_LED(CRGB::Teal);
+    FastLED.show();
 
-    // calibration();
-    // move_to(Position { 0, 0 }, HIGH_SPD);
-    // move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
+    // test_limit_sw(); // Uncomment to test the limit switch before calibration
+
+    calibration();
+    move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
 
 
     // rsw_state[0][0] = true;
@@ -107,46 +110,66 @@ void loop() {
     if (Serial.available()) {
         size_t read_amnt = Serial.readBytes(buffer, 512);
         Operation op(buffer, read_amnt);
+
         if (op.kind == OpKind::Sensor) {
+            Serial.println("Sensor");
+        
             rsw_state_update();
-            uint64_t rsw_data = rsw_state_to_uint64();
-            // print_uint64_t(rsw_data);
+            uint64_t rsw_data;
+            uint64_t prev_rsw_data = rsw_state_to_uint64();
+
+            bool change_registered = false;
+
+            while (!change_registered) {
+                // update the current reading
+                rsw_state_update();
+                rsw_data = rsw_state_to_uint64();
+                // check if the reading has changed
+                if (rsw_data != prev_rsw_data) {
+                    Serial.println("Change Detected");
+                    change_registered = true;
+                    prev_rsw_data = rsw_data;
+                    // check if the next 9 readings are the same
+                    for (int i = 0; i < 9; i++) {
+                        rsw_state_update();
+                        rsw_data = rsw_state_to_uint64();
+                        if (rsw_data != prev_rsw_data) {
+                            change_registered = false;
+                            break;
+                        }
+                    }
+                }
+                // update the previous reading
+                prev_rsw_data = rsw_data;
+            }
+            print_uint64_t(rsw_data); // For Debugging
             write_sensor_data(rsw_data);
+
         } else if (op.kind == OpKind::Magnet) {
-            delay(1000);
+            // CoreXY Movement
             write_ack();
+
         } else if (op.kind == OpKind::Led) {
-            // CRGB led_mat[8][8];
-            size_t r = 1; 
-            size_t c = 1;
-            // Serial.println(buffer[1]);
-            // Read in the data from op.data
+            size_t row = 1; 
+            size_t col = 1;
             for (auto data_ptr = op.data; data_ptr < op.data + op.data_len(); data_ptr += 3) {
-                // led_mat[r][c] = color; 
-                // Serial.println("Setting LED: " + String(r) + " " + String(c));
-                // Rotate c and r 90 degrees to the left
-                // set_LED_xy(9 - r, c, bytes_to_crgb(data_ptr));
-                set_LED_xy(9 - r, c, bytes_to_crgb(data_ptr));
-                // set_LED_xy()
-                c++; 
-                if (c == 9) { 
-                    c = 1; 
-                    r++; 
+                // Read the data from ptr, rotate it, and write it to the LED matrix
+                set_LED_xy(9 - row, col, bytes_to_crgb(data_ptr));
+                // Keep track of the current row and column
+                col++; 
+                if (col == 9) { 
+                    col = 1; 
+                    row++; 
                 }
             }
-
-
-            // Serial.println("LED Done");
             // Display the LED matrix
-            // for (int i = 0; i < 64; i++) {
-            //     Serial.println("LED: " + String(i) + " " + String(leds[i].r) + " " + String(leds[i].g) + " " + String(leds[i].b));
-            // }
-            // set_LED_xy(2, 1, CRGB(255, 0, 0));
             FastLED.show();
-            // Serial.println("LED Showed");
+            // Send the Acknowledgement Code
             write_ack();
         }
     }
+    // rsw_LED_demo();
+    // serial_input_demo();
 }
 
 CRGB bytes_to_crgb(const uint8_t* base) {
@@ -469,7 +492,7 @@ void calibration() {
 }
 
 void move_to_board_position(BoardPosition board_pos, int speed) {
-    if (board_pos.x == 0 || board_pos.y == 0) {
+    if (board_pos.x == 0 || board_pos.y == 0) { // TODO:
         Serial.println("0, 0 not reachable!");
         return;
     }
