@@ -1,12 +1,15 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(dead_code)]
 
+extern crate tokio; 
+
 use anyhow::Context;
 use log::{info, error};
 use shakmaty::{
     san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
     Square,
 };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::io::{BufReader, BufRead, Read, ErrorKind};
 use std::io::Write;
 
@@ -33,8 +36,9 @@ const SERIAL_COMMS_EXE_PATH:     &str = "./serial-communicator";
 // 11. GOTO 3 UNTIL GAME ENDS
 // 12. EXIT
 
+#[tokio::main]
 #[allow(clippy::unnecessary_wraps, clippy::too_many_lines)]
-fn main() -> anyhow::Result<()> {
+async fn main() -> anyhow::Result<()> {
     env_logger::init();
     // STEP 1: SETUP BOARD
     let mut pos = Chess::default();
@@ -43,7 +47,7 @@ fn main() -> anyhow::Result<()> {
     info!("Entered starting position: {fen}", fen = pos.board());
 
     // Setup serial connection to Arduino
-    let mut serial_comms_proc = std::process::Command::new(SERIAL_COMMS_EXE_PATH)
+    let mut serial_comms_proc = tokio::process::Command::new(SERIAL_COMMS_EXE_PATH)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
@@ -52,11 +56,10 @@ fn main() -> anyhow::Result<()> {
         .stdin
         .take()
         .with_context(|| "Failed to get stdin from created serial-communicator process")?; 
-    let mut serial_comms_stdout = BufReader::new(serial_comms_proc
+    let mut serial_comms_stdout = serial_comms_proc
         .stdout
         .take() 
-        .with_context(|| "Failed to get stdout from created serial-communicator process")?
-    ); 
+        .with_context(|| "Failed to get stdout from created serial-communicator process")?; 
 
     // STEP 2: SETUP GAME PARAMETERS
     let mut opponent_wrapper_proc = std::process::Command::new(OPPONENT_WRAPPER_EXE_PATH)
@@ -130,17 +133,11 @@ fn main() -> anyhow::Result<()> {
                 let mut buf: [u8; 8] = [0; 8]; 
                 let mut user_input_2 = String::new(); 
                 std::io::stdin().read_line(&mut user_input_2).unwrap();
-                serial_comms_stdin.write_all(b"WRITE SENSOR\n")?; 
-                // [TODO] Refactor to async-await
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                serial_comms_stdin.write_all(b"READ\n")?; 
-                // [TODO] Refactor to async-await
-                // while !serial_comms_stdout.read(buf) {
-                //     std::thread::sleep(std::time::Duration::from_secs(1));
-                //     eprintln!("[STEP 3] Waiting on serial_comms_stdout"); 
-                // }
-                
-                serial_comms_stdout.read_exact(&mut buf)?;
+
+                // Send to serial, wait on its stdout
+                serial_comms_stdin.write_all(b"WRITE SENSOR\n").await?; 
+                serial_comms_stdout.read_exact(&mut buf).await?;
+
                 // eprintln!("[STEP 3] {:x?}", buf); 
                 let reed_bitset = u64::from_le_bytes(buf);
                 // eprintln!("[STEP 3] {:x}", reed_bitset); 
@@ -156,29 +153,14 @@ fn main() -> anyhow::Result<()> {
                 //===================================
                 //LED sending here
                 //===================================
-                let rgb_data = rgb_to_str(get_rgb(&pos, state));
-                // eprintln!("sending led data \"{rgb_data}\" to serializer");
-                //>>> LED data
-                writeln!(serial_comms_stdin, "{rgb_data}").unwrap();
-                // [TODO] Refactor to async-await
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                //<<< Acknowledgement
+                let mut rgb_data = rgb_to_str(get_rgb(&pos, state));
+                rgb_data.push('\n'); 
+
                 let mut ack_buf = [0u8]; 
-                serial_comms_stdin.write_all(b"READ\n")?; 
-                while let Err(e) = serial_comms_stdout.read_exact(&mut ack_buf) {
-                    // Request read until non-err
-                    eprintln!("{:#?}", e); 
-                    if e.kind() == ErrorKind::TimedOut { 
-                        serial_comms_stdin.write_all(b"READ\n")?; 
-                    } else {
-                        unreachable!(); 
-                    }
-                }
-                //     if !ack_buf.is_empty() {
-                //         break;
-                //     }
-                // }
-                // eprintln!("at here");                 
+                //>>> LED data
+                serial_comms_stdin.write_all(rgb_data.as_bytes()).await?; 
+                //<<< Acknowledgement
+                serial_comms_stdout.read_exact(&mut ack_buf).await?; 
 
                 if let Some(mv) = mv {
                     info!("got full move, playing {mv}");
@@ -207,24 +189,15 @@ fn main() -> anyhow::Result<()> {
             let steps = move_to_steps(mv, pos.turn(), f64::from(captured_whites), f64::from(captured_blacks));
             info!("produced steps: {steps:?}", steps = steps);
 
-            let step_data = steps_to_str(steps);
+            let mut step_data = steps_to_str(steps);
             eprintln!("sending step data {step_data} to serializer");
-            //>>> step data
-            writeln!(serial_comms_stdin, "{step_data}").unwrap();
-            //<<< step complete
+            step_data.push('\n'); 
+
             let mut ack_buf = [0u8]; 
-            serial_comms_stdin.write_all(b"READ\n")?; 
-            // serial_comms_stdin.write_all(b"READ\n")?; 
-            while ack_buf == [0] {
-                // Request read until non-err
-                if let Err(e) = serial_comms_stdout.read_exact(&mut ack_buf) {
-                    if e.kind() == ErrorKind::TimedOut { 
-                        serial_comms_stdin.write_all(b"READ\n")?; 
-                    } else {
-                        unreachable!(); 
-                    }
-                }
-            }
+            //>>> step data
+            serial_comms_stdin.write_all(step_data.as_bytes()).await?; 
+            //<<< step complete
+            serial_comms_stdout.read_exact(&mut ack_buf).await?; 
         }
     }
 
