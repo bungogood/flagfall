@@ -28,7 +28,7 @@ bool rsw_state[8][8] = { 0 };
 #define LOW_SPD  200
 #define CALI_SPD 1500
 #define SPD_TO_INTERVAL(spd) (int) 10000 / spd
-#define MM_TO_STEPS(mm) (long) mm * 159
+#define MM_TO_STEPS(mm) (long) mm * 161
 
 #define UP         0
 #define DOWN       1
@@ -91,20 +91,15 @@ void setup() {
     calibration();
     move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
 
-
-    // rsw_state[0][0] = true;
-    // rsw_state[1][0] = true;
-    // rsw_state[2][0] = true;
-    // rsw_state[7][7] = true;
-    // rsw_state[4][4] = true;
-    // rsw_state_display();
-    // uint64_t res = rsw_state_to_uint64();
-    // print_uint64_t(res);
-    // Serial.write((uint8_t *) &res, sizeof(res));
 }
 
 
 uint8_t buffer[512];
+
+// void loop() {
+//     // serial_input_demo();
+//     rsw_LED_demo();
+// }
 
 void loop() {
     if (Serial.available()) {
@@ -112,7 +107,7 @@ void loop() {
         Operation op(buffer, read_amnt);
 
         if (op.kind == OpKind::Sensor) {
-            Serial.println("Sensor");
+            // Serial.println("Sensor");
         
             rsw_state_update();
             uint64_t rsw_data;
@@ -126,7 +121,7 @@ void loop() {
                 rsw_data = rsw_state_to_uint64();
                 // check if the reading has changed
                 if (rsw_data != prev_rsw_data) {
-                    Serial.println("Change Detected");
+                    // Serial.println("Change Detected");
                     change_registered = true;
                     prev_rsw_data = rsw_data;
                     // check if the next 9 readings are the same
@@ -142,7 +137,7 @@ void loop() {
                 // update the previous reading
                 prev_rsw_data = rsw_data;
             }
-            print_uint64_t(rsw_data); // For Debugging
+            // print_uint64_t(rsw_data); // For Debugging, Please comment out
             write_sensor_data(rsw_data);
 
         } else if (op.kind == OpKind::Magnet) {
@@ -159,9 +154,9 @@ void loop() {
                 bool magnet = (*curr_ptr) != 0;
                 curr_ptr += 1;
 
-                Serial.println(x);
-                Serial.println(y);
-                Serial.println(magnet);
+                // Serial.println(x);
+                // Serial.println(y);
+                // Serial.println(magnet);
                 if (magnet) {
                     magnet_on();
                 } else {
@@ -200,6 +195,7 @@ void loop() {
     // rsw_LED_demo();
     // serial_input_demo();
 }
+
 
 CRGB bytes_to_crgb(const uint8_t* base) {
     return CRGB(base[0], base[1], base[2]); 
@@ -477,7 +473,7 @@ void core_xy_setup() {
 * Calibrate the gantry to the left down corner.
 */
 void calibration() {
-    Serial.println("CALIBRATING...");
+    // Serial.println("CALIBRATING...");
     // Disable M2 so that it is not locked
     digitalWrite(M2.DISABLE_PIN, HIGH);
     // Enable M1 to rotate
@@ -514,8 +510,8 @@ void calibration() {
 }
 
 void move_to_board_position(BoardPosition board_pos, int speed) {
-    if (board_pos.x == 0 || board_pos.y == 0) { // TODO:
-        Serial.println("0, 0 not reachable!");
+    if (board_pos.x == 0 && board_pos.y == 0) { // TODO:
+        // Serial.println("0, 0 not reachable!");
         return;
     }
     Position target_pos;
@@ -535,16 +531,16 @@ void move_to_board_position(BoardPosition board_pos, int speed) {
 */
 void move_to(Position target_pos, int speed) {
     // Print start position
-    Serial.print("[ ");
-    Serial.print(current_pos.x);
-    Serial.print(", ");
-    Serial.print(current_pos.y);
-    Serial.print(" ]");
+    // Serial.print("[ ");
+    // Serial.print(current_pos.x);
+    // Serial.print(", ");
+    // Serial.print(current_pos.y);
+    // Serial.print(" ]");
 
     // Check if the target position is valid
     if (target_pos.x < MIN_X || target_pos.x > MAX_X || 
         target_pos.y < MIN_Y || target_pos.y > MAX_Y) {
-        Serial.println("Invalid target position");
+        // Serial.println("Invalid target position");
         return;
     }
     // Calibrate if not calibrated yet
@@ -584,11 +580,11 @@ void move_to(Position target_pos, int speed) {
     current_pos.y = target_pos.y;
 
     // Print the end position
-    Serial.print("\t-->    [ ");
-    Serial.print(current_pos.x);
-    Serial.print(", ");
-    Serial.print(current_pos.y);
-    Serial.println(" ]");
+    // Serial.print("\t-->    [ ");
+    // Serial.print(current_pos.x);
+    // Serial.print(", ");
+    // Serial.print(current_pos.y);
+    // Serial.println(" ]");
 
 }
 
