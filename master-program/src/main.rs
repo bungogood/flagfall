@@ -110,7 +110,6 @@ fn main() -> anyhow::Result<()> {
     };
 
     // std::thread::sleep(std::time::Duration::from_secs(5));
-    //UPDATE THIS AFTER ENEMY MOVEMENT TOO
     let mut prev_bitset: Bitboard = Bitboard(0xffff_0000_0000_ffff);
     // Right now the program is set to loop through the input from the reed switches ONLY
     'game_loop: 
@@ -130,15 +129,15 @@ fn main() -> anyhow::Result<()> {
                 let mut buf: [u8; 8] = [0; 8]; 
                 let mut user_input_2 = String::new(); 
                 //Refactor to automatic reed switch change detection
-                //std::io::stdin().read_line(&mut user_input_2).unwrap();
+
                 serial_comms_stdin.write_all(b"WRITE SENSOR\n")?; 
-                // [TODO] Refactor to async-await
-                std::thread::sleep(std::time::Duration::from_secs(1));
+
+                //std::thread::sleep(std::time::Duration::from_secs(1));
                 serial_comms_stdin.write_all(b"READ\n")?; 
                 // [TODO] Refactor to async-await
                 eprintln!("sent request");
                 while let Err(e) = serial_comms_stdout.read_exact(&mut buf) {
-                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    //std::thread::sleep(std::time::Duration::from_secs(1));
                     eprintln!("[STEP 3] 
                     
                     Waiting on serial_comms_stdout"); 
@@ -155,6 +154,37 @@ fn main() -> anyhow::Result<()> {
                 prev_bitset = Bitboard(reed_bitset);
                 eprintln!("[STEP 3] actual_instruction: {}", actual_instruction);
                 (state, mv) = update_state(&pos, actual_instruction, newstate);
+                if state == State::Error {
+                    let desired = pos.board().occupied();
+                    while (desired != prev_bitset){
+                        let wrong_positions_rgb = RGB{
+                            r: desired.toggled(prev_bitset),
+                            g: Bitboard::EMPTY,
+                            b: Bitboard::EMPTY,
+                        };
+                        let rgb_data = rgb_to_str(wrong_positions_rgb);
+                        writeln!(serial_comms_stdin, "{rgb_data}").unwrap();
+                
+                        let mut buf: [u8; 8] = [0; 8]; 
+                        eprintln!("please put the pieces back in the correct position and enter input to confirm");
+                        std::io::stdin().read_line(&mut user_input).unwrap();
+                
+                        serial_comms_stdin.write_all(b"WRITE SENSOR\n")?; 
+                        //std::thread::sleep(std::time::Duration::from_secs(1));
+                        serial_comms_stdin.write_all(b"READ\n")?; 
+                        // [TODO] Refactor to async-await
+                        eprintln!("sent request");
+                        while let Err(e) = serial_comms_stdout.read_exact(&mut buf) {
+                            eprintln!("[STEP 3] 
+                            
+                            Waiting on serial_comms_stdout"); 
+                        }
+                        let reed_bitset = u64::from_le_bytes(buf);
+                        eprintln!("[STEP 3] {:x}", reed_bitset);
+                        prev_bitset = Bitboard(reed_bitset);
+                    }
+                    state = State::Idle;
+                }
                 let copied_pos = pos.clone();
 
                 //===================================
@@ -165,7 +195,7 @@ fn main() -> anyhow::Result<()> {
                 //>>> LED data
                 writeln!(serial_comms_stdin, "{rgb_data}").unwrap();
                 // [TODO] Refactor to async-await
-                std::thread::sleep(std::time::Duration::from_secs(1));
+                //std::thread::sleep(std::time::Duration::from_secs(1));
                 //<<< Acknowledgement
                 let mut ack_buf = [0u8]; 
                 serial_comms_stdin.write_all(b"READ\n")?; 
@@ -178,12 +208,6 @@ fn main() -> anyhow::Result<()> {
                         unreachable!(); 
                     }
                 }
-                //     if !ack_buf.is_empty() {
-                //         break;
-                //     }
-                // }
-                // eprintln!("at here");                 
-
                 if let Some(mv) = mv {
                     info!("got full move, playing {mv}");
                     pos = copied_pos.play(&mv).unwrap();
