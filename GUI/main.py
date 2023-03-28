@@ -1,8 +1,11 @@
 import pygame
 import pygame_gui
 from pygame_gui.core import ObjectID
-import chess.svg
-from cairosvg import svg2png
+
+from kbhit import KBHit
+
+# Define a custom Pygame event type for stdin input
+STDIN_INPUT_EVENT = pygame.USEREVENT + 1
 
 pygame.init()
 
@@ -61,6 +64,11 @@ settings_button = None
 # Set up the clock for managing time
 clock = pygame.time.Clock()
 
+WAIT_ON_STDIN = False
+inp = None
+
+kb = KBHit()
+buf = ""
 while True:
     # Get the time since the last loop iteration
     time_delta = clock.tick(60) / 1000.0
@@ -561,18 +569,9 @@ while True:
                     manager=manager,
                     anchors={'center': 'center'}
                 )
-                #board = chess.Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
-                #svg = chess.svg.board(
-                #    board
-                #)
-
-                #svg2png(bytestring=svg,write_to='temp.png')
-                #image = pygame.image.load("temp.png")
-                print(gamemode)
-                print(engine)
-                print(colour)
-                print(opponentID)
-                print(lichessToken)
+                
+                WAIT_ON_STDIN = True
+                print("Game in Progress")
             elif event.ui_element == cancel_button:
                 begin_button.kill()
                 begin_button = None
@@ -592,6 +591,25 @@ while True:
                 colour = ""
                 engine = ""
                 opponentID = ""
+            elif event.type == STDIN_INPUT_EVENT:
+                assert inp is not None
+                print("Input: " + inp)
+                line = inp
+                if line == 'quit':
+                    WAIT_ON_STDIN = False
+                    break
+                elif line == 'blue':
+                    colour = "blue"
+                elif line == 'red':
+                    colour = "red"
+                else:
+                    print("Invalid input")
+                gameInProgress_label = pygame_gui.elements.UILabel(
+                    relative_rect=pygame.Rect((0, 0), (300, 100)),
+                    text="Colour: " + colour,
+                    manager=manager,
+                    anchors={'center': 'center'}
+                )
 
         # Process events for the UI manager
         manager.process_events(event)
@@ -605,3 +623,22 @@ while True:
     if(logo != None): pygame.Surface.blit(screen,logo,(width/2-222, 50))
     manager.draw_ui(screen)
     pygame.display.update()
+
+    # if WAIT_ON_STDIN:
+    #     inp = input()
+    #     pygame.event.post(pygame.event.Event(STDIN_INPUT_EVENT, {'ui_element': "special"}))
+    #     WAIT_ON_STDIN = False
+    # else:
+    #     inp = None
+
+    if kb.kbhit():
+        c = kb.getch()
+        if ord(c) == 27: # ESC
+            break
+        elif ord(c) == 13: # ENTER
+            inp = buf
+            buf = ''
+            pygame.event.post(pygame.event.Event(STDIN_INPUT_EVENT, {'ui_element': "special"}))
+            print("Input: " + inp)
+        else:
+            buf += c

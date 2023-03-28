@@ -163,7 +163,7 @@ fn main() -> anyhow::Result<()> {
                 let mut ack_buf: Vec<u8> = Vec::with_capacity(32); 
                 loop{
                     serial_comms_stdout.read_until(b'\n', &mut ack_buf)?;
-                    if(!ack_buf.is_empty()){
+                    if !ack_buf.is_empty() {
                         break;
                     }
                 }
