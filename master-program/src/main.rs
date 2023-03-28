@@ -156,24 +156,26 @@ async fn main() -> anyhow::Result<()> {
                             g: Bitboard::EMPTY,
                             b: Bitboard::EMPTY,
                         };
-                        let rgb_data = rgb_to_str(wrong_positions_rgb);
-                        writeln!(serial_comms_stdin, "{rgb_data}").unwrap();
+                        let mut rgb_data = rgb_to_str(wrong_positions_rgb);
+                        rgb_data.push('\n');
+                        serial_comms_stdin.write_all(rgb_data.as_bytes()).await?;
                 
                         let mut buf: [u8; 8] = [0; 8]; 
                         eprintln!("please put the pieces back in the correct position and enter input to confirm");
                         std::io::stdin().read_line(&mut user_input).unwrap();
                 
-                        serial_comms_stdin.write_all(b"WRITE SENSOR\n")?; 
-                        //std::thread::sleep(std::time::Duration::from_secs(1));
-                        serial_comms_stdin.write_all(b"READ\n")?; 
-                        // [TODO] Refactor to async-await
+                        serial_comms_stdin.write_all(b"WRITE SENSOR\n").await?; 
                         eprintln!("sent request");
-                        while let Err(e) = serial_comms_stdout.read_exact(&mut buf) {
-                            eprintln!("[STEP 3] 
+                        serial_comms_stdout.read_exact(&mut buf).await?;
+                        //std::thread::sleep(std::time::Duration::from_secs(1));
+                        // serial_comms_stdin.write_all(b"READ\n")?; 
+                        // [TODO] Refactor to async-await
+                        // while let Err(e) = serial_comms_stdout.read_exact(&mut buf) {
+                        //     eprintln!("[STEP 3] 
                             
-                            Waiting on serial_comms_stdout"); 
-                        }
-                        let reed_bitset = u64::from_le_bytes(buf);
+                        //     Waiting on serial_comms_stdout"); 
+                        // }
+                        // let reed_bitset = u64::from_le_bytes(buf);
                         eprintln!("[STEP 3] {:x}", reed_bitset);
                         prev_bitset = Bitboard(reed_bitset);
                     }
