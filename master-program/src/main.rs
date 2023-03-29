@@ -2,27 +2,24 @@
 #![allow(dead_code)]
 
 use anyhow::Context;
-use log::{info, error, warn};
-use shakmaty::{
-    san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
-    Square,
-};
-use std::io::{BufReader, BufRead, Read, ErrorKind};
+use log::{error, info, warn};
+use shakmaty::{san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role, Square};
 use std::io::Write;
+use std::io::{BufRead, BufReader, ErrorKind, Read};
 
 // handle exe paths on windows & unix
 #[cfg(windows)]
 const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper.exe";
 #[cfg(windows)]
-const SERIAL_COMMS_EXE_PATH:     &str = "serial-communicator.exe";
+const SERIAL_COMMS_EXE_PATH: &str = "serial-communicator.exe";
 #[cfg(windows)]
-const PYTHON_INTERPRETER_PATH:   &str = "python.exe";
+const PYTHON_INTERPRETER_PATH: &str = "python.exe";
 #[cfg(unix)]
 const OPPONENT_WRAPPER_EXE_PATH: &str = "./opponent-wrapper";
 #[cfg(unix)]
-const SERIAL_COMMS_EXE_PATH:     &str = "./serial-communicator"; 
+const SERIAL_COMMS_EXE_PATH: &str = "./serial-communicator";
 #[cfg(unix)]
-const PYTHON_INTERPRETER_PATH:   &str = "python3";
+const PYTHON_INTERPRETER_PATH: &str = "python3";
 
 // 1. SETUP BOARD (kinda handwaved, user probably does it)
 // 2. SETUP GAME PARAMETERS (time control, human playing colour, etc)
@@ -37,7 +34,11 @@ const PYTHON_INTERPRETER_PATH:   &str = "python3";
 // 11. GOTO 3 UNTIL GAME ENDS
 // 12. EXIT
 
-#[allow(clippy::unnecessary_wraps, clippy::too_many_lines)]
+#[allow(
+    clippy::unnecessary_wraps,
+    clippy::too_many_lines,
+    clippy::cognitive_complexity
+)]
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     // STEP 1: SETUP BOARD
@@ -51,16 +52,19 @@ fn main() -> anyhow::Result<()> {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .with_context(|| format!("Failed to start serial-communicator at {SERIAL_COMMS_EXE_PATH}"))?; 
+        .with_context(|| {
+            format!("Failed to start serial-communicator at {SERIAL_COMMS_EXE_PATH}")
+        })?;
     let mut serial_comms_stdin = serial_comms_proc
         .stdin
         .take()
-        .with_context(|| "Failed to get stdin from created serial-communicator process")?; 
-    let mut serial_comms_stdout = BufReader::new(serial_comms_proc
-        .stdout
-        .take() 
-        .with_context(|| "Failed to get stdout from created serial-communicator process")?
-    ); 
+        .with_context(|| "Failed to get stdin from created serial-communicator process")?;
+    let mut serial_comms_stdout = BufReader::new(
+        serial_comms_proc
+            .stdout
+            .take()
+            .with_context(|| "Failed to get stdout from created serial-communicator process")?,
+    );
 
     // STEP 2: SETUP GAME PARAMETERS
     let mut opponent_wrapper_proc = std::process::Command::new(OPPONENT_WRAPPER_EXE_PATH)
@@ -68,7 +72,9 @@ fn main() -> anyhow::Result<()> {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .with_context(|| format!("Failed to start opponent wrapper at {OPPONENT_WRAPPER_EXE_PATH}"))?;
+        .with_context(|| {
+            format!("Failed to start opponent wrapper at {OPPONENT_WRAPPER_EXE_PATH}")
+        })?;
     let opponent_wrapper_stdout = opponent_wrapper_proc
         .stdout
         .take()
@@ -87,14 +93,18 @@ fn main() -> anyhow::Result<()> {
         .current_dir("GUI")
         .spawn()
         .with_context(|| "Failed to start gui")?;
-    let gui_stdout = BufReader::new(gui_proc
-        .stdout
-        .take()
-        .with_context(|| "Failed to get stdout from created gui process")?
+    let gui_stdout = BufReader::new(
+        gui_proc
+            .stdout
+            .take()
+            .with_context(|| "Failed to get stdout from created gui process")?,
     );
     let mut gui_lines = gui_stdout.lines();
     assert!(gui_lines.next().unwrap().unwrap().starts_with("pygame"));
-    assert_eq!(gui_lines.next().unwrap().unwrap(), "Hello from the pygame community. https://www.pygame.org/contribute.html");
+    assert_eq!(
+        gui_lines.next().unwrap().unwrap(),
+        "Hello from the pygame community. https://www.pygame.org/contribute.html"
+    );
 
     let mut engine_code = None;
     let mut starting_colour = None;
@@ -113,10 +123,12 @@ fn main() -> anyhow::Result<()> {
         }
     }
     let engine_code = engine_code.ok_or_else(|| anyhow::anyhow!("engine code not set"))?;
-    let starting_colour = starting_colour.ok_or_else(|| anyhow::anyhow!("starting colour not set"))?;
+    let starting_colour =
+        starting_colour.ok_or_else(|| anyhow::anyhow!("starting colour not set"))?;
 
     // the opponent wrapper gives two prompts on boot, we need to pipe them through and pipe the responses back
-    let first_line = stdout_lines.next()
+    let first_line = stdout_lines
+        .next()
         .with_context(|| "Opponent wrapper gave no input as first line.")?
         .with_context(|| "Failed to read first line from opponent wrapper.")?;
     info!("opponent wrapper sends {first_line}");
@@ -124,7 +136,8 @@ fn main() -> anyhow::Result<()> {
     writeln!(opponent_wrapper_stdin, "{engine_code}")
         .with_context(|| "Failed to write engine code to opponent wrapper")?;
 
-    let second_line = stdout_lines.next()
+    let second_line = stdout_lines
+        .next()
         .with_context(|| "Opponent wrapper gave no input as second line.")?
         .with_context(|| "Failed to read second line from opponent wrapper.")?;
     info!("opponent wrapper sends {second_line}");
@@ -146,15 +159,12 @@ fn main() -> anyhow::Result<()> {
             error!("Failed to send line to opponent wrapper: {e}");
         }
     };
-    let mut recv_line = || {
-        stdout_lines.next().unwrap().unwrap()
-    };
+    let mut recv_line = || stdout_lines.next().unwrap().unwrap();
 
     // std::thread::sleep(std::time::Duration::from_secs(5));
 
     // Right now the program is set to loop through the input from the reed switches ONLY
-    'game_loop: 
-    loop {
+    'game_loop: loop {
         if let Some(outcome) = pos.outcome() {
             info!("game ended with {outcome}");
             send_line("quit");
@@ -165,26 +175,26 @@ fn main() -> anyhow::Result<()> {
             loop {
                 // STEP 3: READ REED-SWITCH OUTPUT
                 let newstate = state;
-                
+
                 // This is input from REED SWITCHES
-                // let reed_bitset: u64; 
-                let mut buf: [u8; 8] = [0; 8]; 
-                let mut user_input_2 = String::new(); 
+                // let reed_bitset: u64;
+                let mut buf: [u8; 8] = [0; 8];
+                let mut user_input_2 = String::new();
                 std::io::stdin().read_line(&mut user_input_2).unwrap();
-                serial_comms_stdin.write_all(b"WRITE SENSOR\n")?; 
+                serial_comms_stdin.write_all(b"WRITE SENSOR\n")?;
                 // [TODO] Refactor to async-await
                 std::thread::sleep(std::time::Duration::from_secs(1));
-                serial_comms_stdin.write_all(b"READ\n")?; 
+                serial_comms_stdin.write_all(b"READ\n")?;
                 // [TODO] Refactor to async-await
                 // while !serial_comms_stdout.read(buf) {
                 //     std::thread::sleep(std::time::Duration::from_secs(1));
-                //     eprintln!("[STEP 3] Waiting on serial_comms_stdout"); 
+                //     eprintln!("[STEP 3] Waiting on serial_comms_stdout");
                 // }
-                
+
                 serial_comms_stdout.read_exact(&mut buf)?;
-                // eprintln!("[STEP 3] {:x?}", buf); 
+                // eprintln!("[STEP 3] {:x?}", buf);
                 let reed_bitset = u64::from_le_bytes(buf);
-                // eprintln!("[STEP 3] {:x}", reed_bitset); 
+                // eprintln!("[STEP 3] {:x}", reed_bitset);
 
                 let mv;
                 //IMPORTANT: Right now it's only taking the first changed square, update so it loops over them
@@ -204,22 +214,22 @@ fn main() -> anyhow::Result<()> {
                 // [TODO] Refactor to async-await
                 std::thread::sleep(std::time::Duration::from_secs(1));
                 //<<< Acknowledgement
-                let mut ack_buf = [0u8]; 
-                serial_comms_stdin.write_all(b"READ\n")?; 
+                let mut ack_buf = [0u8];
+                serial_comms_stdin.write_all(b"READ\n")?;
                 while let Err(e) = serial_comms_stdout.read_exact(&mut ack_buf) {
                     // Request read until non-err
                     eprintln!("{e:#?}");
-                    if e.kind() == ErrorKind::TimedOut { 
-                        serial_comms_stdin.write_all(b"READ\n")?; 
+                    if e.kind() == ErrorKind::TimedOut {
+                        serial_comms_stdin.write_all(b"READ\n")?;
                     } else {
-                        unreachable!(); 
+                        unreachable!();
                     }
                 }
                 //     if !ack_buf.is_empty() {
                 //         break;
                 //     }
                 // }
-                // eprintln!("at here");                 
+                // eprintln!("at here");
 
                 if let Some(mv) = mv {
                     info!("got full move, playing {mv}");
@@ -245,7 +255,12 @@ fn main() -> anyhow::Result<()> {
 
             // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
 
-            let steps = move_to_steps(mv, pos.turn(), f64::from(captured_whites), f64::from(captured_blacks));
+            let steps = move_to_steps(
+                mv,
+                pos.turn(),
+                f64::from(captured_whites),
+                f64::from(captured_blacks),
+            );
             info!("produced steps: {steps:?}", steps = steps);
 
             let step_data = steps_to_str(steps);
@@ -253,16 +268,16 @@ fn main() -> anyhow::Result<()> {
             //>>> step data
             writeln!(serial_comms_stdin, "{step_data}").unwrap();
             //<<< step complete
-            let mut ack_buf = [0u8]; 
-            serial_comms_stdin.write_all(b"READ\n")?; 
-            // serial_comms_stdin.write_all(b"READ\n")?; 
+            let mut ack_buf = [0u8];
+            serial_comms_stdin.write_all(b"READ\n")?;
+            // serial_comms_stdin.write_all(b"READ\n")?;
             while ack_buf == [0] {
                 // Request read until non-err
                 if let Err(e) = serial_comms_stdout.read_exact(&mut ack_buf) {
-                    if e.kind() == ErrorKind::TimedOut { 
-                        serial_comms_stdin.write_all(b"READ\n")?; 
+                    if e.kind() == ErrorKind::TimedOut {
+                        serial_comms_stdin.write_all(b"READ\n")?;
                     } else {
-                        unreachable!(); 
+                        unreachable!();
                     }
                 }
             }
@@ -275,15 +290,20 @@ fn main() -> anyhow::Result<()> {
     //TODO: make sure that moves coming from SAN are committed by using Chess.play()
 
     // wait for opponent wrapper to finish
-    let opponent_wrapper_output = opponent_wrapper_proc.wait().with_context(|| "Failed to wait for opponent wrapper to finish")?;
-    info!("opponent wrapper exited with status {status}", status = opponent_wrapper_output);
+    let opponent_wrapper_output = opponent_wrapper_proc
+        .wait()
+        .with_context(|| "Failed to wait for opponent wrapper to finish")?;
+    info!(
+        "opponent wrapper exited with status {status}",
+        status = opponent_wrapper_output
+    );
 
     Ok(())
 }
 
-fn steps_to_str(steps: Vec<Step>) -> String{
-    let mut output =  String::from("WRITE MAGNET");
-    for step in steps{
+fn steps_to_str(steps: Vec<Step>) -> String {
+    let mut output = String::from("WRITE MAGNET");
+    for step in steps {
         let x = step.x.to_string();
         let y = step.y.to_string();
         let magnet = step.magnet.to_string();
@@ -292,34 +312,34 @@ fn steps_to_str(steps: Vec<Step>) -> String{
     output
 }
 
-fn rgb_to_str(rgb: RGB) -> String{
-    let mut output =  String::from("WRITE LED");
+fn rgb_to_str(rgb: RGB) -> String {
+    let mut output = String::from("WRITE LED");
     let rs = rgb.r;
-    let rs2 =  format!("{rs:064b}");
     let gs = rgb.g;
-    let gs2 =  format!("{gs:064b}");
     let bs = rgb.b;
-    let bs2 =  format!("{bs:064b}");
-    for ((r,g),b) in rs2.chars().zip(gs2.chars()).zip(bs2.chars()){
+    let rs = format!("{rs:064b}");
+    let gs = format!("{gs:064b}");
+    let bs = format!("{bs:064b}");
+    for ((r, g), b) in rs.chars().zip(gs.chars()).zip(bs.chars()) {
         output.push(' ');
-        match ((r,g),b) {
-            (('1','0'),'0') => output.push_str(&0x00FF_0000.to_string()),
-            (('0','1'),'0') => output.push_str(&0x0000_8000.to_string()),
-            (('0','0'),'1') => output.push_str(&0x0000_00FF.to_string()),
-            (('1','1'),'0') => output.push_str(&0x00FF_FF00.to_string()),
-            (('1','0'),'1') => output.push_str(&0x0080_0080.to_string()),
-            (('1','1'),'1') => output.push_str(&0x00FF_FFFF.to_string()),
-            (('0','1'),'1') => output.push_str(&0x0040_E0D0.to_string()),
-            (_,_) => output.push_str(&0x0000_0000.to_string()),
+        match ((r, g), b) {
+            (('1', '0'), '0') => output.push_str(&0x00FF_0000.to_string()),
+            (('0', '1'), '0') => output.push_str(&0x0000_8000.to_string()),
+            (('0', '0'), '1') => output.push_str(&0x0000_00FF.to_string()),
+            (('1', '1'), '0') => output.push_str(&0x00FF_FF00.to_string()),
+            (('1', '0'), '1') => output.push_str(&0x0080_0080.to_string()),
+            (('1', '1'), '1') => output.push_str(&0x00FF_FFFF.to_string()),
+            (('0', '1'), '1') => output.push_str(&0x0040_E0D0.to_string()),
+            (_, _) => output.push_str(&0x0000_0000.to_string()),
         }
     }
     output
 }
 
-fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32>{
+fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32> {
     let mut difference = prev.toggled(Bitboard(current));
     let mut changed = difference.first();
-    let mut output: Vec<u32> =Vec::new();
+    let mut output: Vec<u32> = Vec::new();
     while let Some(change) = changed {
         output.push(square_to_number(change));
         difference = difference.without(Bitboard::from_square(change));
@@ -330,8 +350,9 @@ fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32>{
 //18446462598732902399
 //18446462598733955071
 
-fn square_to_number(square: Square) -> u32{
-    ((rank_to_float(square.rank())-1.0) * 8.0 + file_to_float(square.file())-1.0) as u32
+fn square_to_number(square: Square) -> u32 {
+    #![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    ((rank_to_float(square.rank()) - 1.0).mul_add(8.0, file_to_float(square.file())) - 1.0) as u32
 }
 
 #[allow(clippy::too_many_lines)]
