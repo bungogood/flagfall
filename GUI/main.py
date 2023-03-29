@@ -1,6 +1,8 @@
+import sys
 import pygame
 import pygame_gui
 from pygame_gui.core import ObjectID
+import chess.svg
 
 from kbhit import KBHit
 
@@ -64,11 +66,11 @@ settings_button = None
 # Set up the clock for managing time
 clock = pygame.time.Clock()
 
-WAIT_ON_STDIN = False
-inp = None
+# inp = None
+# board_image = None
 
-kb = KBHit()
-buf = ""
+# kb = KBHit()
+# buf = ""
 while True:
     # Get the time since the last loop iteration
     time_delta = clock.tick(60) / 1000.0
@@ -240,6 +242,7 @@ while True:
                     object_id= ObjectID(object_id='#random_button')
                     )
             elif event.ui_element == player_vs_engine_button:
+                print("vs engine")
                 # Handle player vs engine mode
                 player_vs_player_button.kill()
                 player_vs_player_button = None
@@ -278,6 +281,7 @@ while True:
                     object_id=ObjectID(class_id='@small_buttons')
                 )
             elif event.ui_element == cancel_button_engine:
+                print("cancel engine")
                 viridithas_button.kill()
                 viridithas_button = None
                 maia_button.kill()
@@ -317,6 +321,7 @@ while True:
                     object_id= ObjectID(object_id='#settings_button')
                 )
             elif event.ui_element == viridithas_button:
+                print("viridithas")
                 viridithas_button.kill()
                 viridithas_button = None
                 maia_button.kill()
@@ -352,6 +357,7 @@ while True:
                 object_id= ObjectID(object_id='#random_button')
                 )
             elif event.ui_element == maia_button:
+                print("maia")
                 viridithas_button.kill()
                 viridithas_button = None
                 maia_button.kill()
@@ -387,6 +393,7 @@ while True:
                 object_id= ObjectID(object_id='#random_button')
                 )
             elif event.ui_element == white_button:
+                print("white")
                 white_button.kill()
                 white_button = None
                 black_button.kill()
@@ -413,6 +420,7 @@ while True:
                     object_id=ObjectID(class_id='@small_buttons')
                 )
             elif event.ui_element == black_button:
+                print("black")
                 white_button.kill()
                 white_button = None
                 black_button.kill()
@@ -439,6 +447,7 @@ while True:
                     object_id=ObjectID(class_id='@small_buttons')
                 )
             elif event.ui_element == random_button:
+                print("random")
                 white_button.kill()
                 white_button = None
                 black_button.kill()
@@ -559,6 +568,7 @@ while True:
                     object_id= ObjectID(object_id='#settings_button')
                 )
             elif event.ui_element == begin_button:
+                print("begin")
                 begin_button.kill()
                 begin_button = None
                 cancel_button.kill()
@@ -569,9 +579,7 @@ while True:
                     manager=manager,
                     anchors={'center': 'center'}
                 )
-                
-                WAIT_ON_STDIN = True
-                print("Game in Progress")
+                sys.exit(0)
             elif event.ui_element == cancel_button:
                 begin_button.kill()
                 begin_button = None
@@ -591,25 +599,25 @@ while True:
                 colour = ""
                 engine = ""
                 opponentID = ""
-            elif event.type == STDIN_INPUT_EVENT:
-                assert inp is not None
-                print("Input: " + inp)
-                line = inp
-                if line == 'quit':
-                    WAIT_ON_STDIN = False
-                    break
-                elif line == 'blue':
-                    colour = "blue"
-                elif line == 'red':
-                    colour = "red"
-                else:
-                    print("Invalid input")
-                gameInProgress_label = pygame_gui.elements.UILabel(
-                    relative_rect=pygame.Rect((0, 0), (300, 100)),
-                    text="Colour: " + colour,
-                    manager=manager,
-                    anchors={'center': 'center'}
-                )
+            # elif event.type == STDIN_INPUT_EVENT:
+            #     gameInProgress_label.kill()
+            #     assert inp is not None
+            #     print("Input: " + inp)
+            #     FEN = inp
+            #     try:
+            #         board = chess.Board(FEN)
+            #     except:
+            #         print("Invalid FEN")
+            #         continue
+            #     print(board)
+            #     svg = chess.svg.board(board=board, size=800)
+            #     f = open("board.svg", "w")
+            #     f.write(svg)
+            #     f.close()
+            #     board_image = pygame.image.load("board.svg")
+            #     board_image = pygame.transform.scale(board_image, (width, height))
+            #     pygame.display.flip()
+            #     inp = None
 
         # Process events for the UI manager
         manager.process_events(event)
@@ -621,24 +629,17 @@ while True:
 
     screen.fill((255,198,108))
     if(logo != None): pygame.Surface.blit(screen,logo,(width/2-222, 50))
+    # if(board_image != None): pygame.Surface.blit(screen,board_image,(0, 0))
     manager.draw_ui(screen)
     pygame.display.update()
 
-    # if WAIT_ON_STDIN:
-    #     inp = input()
-    #     pygame.event.post(pygame.event.Event(STDIN_INPUT_EVENT, {'ui_element': "special"}))
-    #     WAIT_ON_STDIN = False
-    # else:
-    #     inp = None
-
-    if kb.kbhit():
-        c = kb.getch()
-        if ord(c) == 27: # ESC
-            break
-        elif ord(c) == 13: # ENTER
-            inp = buf
-            buf = ''
-            pygame.event.post(pygame.event.Event(STDIN_INPUT_EVENT, {'ui_element': "special"}))
-            print("Input: " + inp)
-        else:
-            buf += c
+    # if kb.kbhit():
+    #     c = kb.getch()
+    #     if ord(c) == 27: # ESC
+    #         break
+    #     elif ord(c) == 13: # ENTER
+    #         inp = buf
+    #         buf = ''
+    #         pygame.event.post(pygame.event.Event(STDIN_INPUT_EVENT, {'ui_element': "special"}))
+    #     else:
+    #        buf += c

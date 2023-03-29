@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use anyhow::Context;
-use log::{info, error};
+use log::{info, error, warn};
 use shakmaty::{
     san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
     Square,
@@ -14,11 +14,15 @@ use std::io::Write;
 #[cfg(windows)]
 const OPPONENT_WRAPPER_EXE_PATH: &str = "opponent-wrapper.exe";
 #[cfg(windows)]
-const SERIAL_COMMS_EXE_PATH:     &str = "serial-communicator.exe"; 
+const SERIAL_COMMS_EXE_PATH:     &str = "serial-communicator.exe";
+#[cfg(windows)]
+const PYTHON_INTERPRETER_PATH:   &str = "python.exe";
 #[cfg(unix)]
 const OPPONENT_WRAPPER_EXE_PATH: &str = "./opponent-wrapper";
 #[cfg(unix)]
 const SERIAL_COMMS_EXE_PATH:     &str = "./serial-communicator"; 
+#[cfg(unix)]
+const PYTHON_INTERPRETER_PATH:   &str = "python3";
 
 // 1. SETUP BOARD (kinda handwaved, user probably does it)
 // 2. SETUP GAME PARAMETERS (time control, human playing colour, etc)
@@ -76,24 +80,61 @@ fn main() -> anyhow::Result<()> {
         .with_context(|| "Failed to get stdin from created opponent wrapper process")?;
     let mut stdout_lines = opponent_wrapper_stdout.lines();
 
+    let mut gui_proc = std::process::Command::new(PYTHON_INTERPRETER_PATH)
+        .arg("main.py")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .current_dir("GUI")
+        .spawn()
+        .with_context(|| "Failed to start gui")?;
+    let gui_stdout = BufReader::new(gui_proc
+        .stdout
+        .take()
+        .with_context(|| "Failed to get stdout from created gui process")?
+    );
+    let mut gui_lines = gui_stdout.lines();
+    assert!(gui_lines.next().unwrap().unwrap().starts_with("pygame"));
+    assert_eq!(gui_lines.next().unwrap().unwrap(), "Hello from the pygame community. https://www.pygame.org/contribute.html");
+
+    let mut engine_code = None;
+    let mut starting_colour = None;
+    for line_res in gui_lines {
+        let line = line_res?;
+        info!("gui sent cmd: \"{line}\"");
+        match line.trim() {
+            "vs engine" => (),
+            "viridithas" => engine_code = Some("v"),
+            "maia" => engine_code = Some("m"),
+            "white" => starting_colour = Some("white"),
+            "black" => starting_colour = Some("black"),
+            "random" => starting_colour = Some("random"),
+            "begin" => break,
+            _ => warn!("Unknown cmd from gui: \"{line}\""),
+        }
+    }
+    let engine_code = engine_code.ok_or_else(|| anyhow::anyhow!("engine code not set"))?;
+    let starting_colour = starting_colour.ok_or_else(|| anyhow::anyhow!("starting colour not set"))?;
+
     // the opponent wrapper gives two prompts on boot, we need to pipe them through and pipe the responses back
-    let mut user_input = String::new();
     let first_line = stdout_lines.next()
         .with_context(|| "Opponent wrapper gave no input as first line.")?
         .with_context(|| "Failed to read first line from opponent wrapper.")?;
-    println!("{first_line}");
-    std::io::stdin().read_line(&mut user_input).unwrap();
-    write!(opponent_wrapper_stdin, "{user_input}").unwrap();
+    info!("opponent wrapper sends {first_line}");
+    info!("sending engine code {engine_code} to opponent wrapper");
+    writeln!(opponent_wrapper_stdin, "{engine_code}")
+        .with_context(|| "Failed to write engine code to opponent wrapper")?;
+
     let second_line = stdout_lines.next()
         .with_context(|| "Opponent wrapper gave no input as second line.")?
         .with_context(|| "Failed to read second line from opponent wrapper.")?;
-    println!("{second_line}");
-    user_input.clear();
-    std::io::stdin().read_line(&mut user_input).unwrap();
-    write!(opponent_wrapper_stdin, "{user_input}").unwrap();
-    let player_turn = match user_input.trim() {
-        "white" => Color::White,
+    info!("opponent wrapper sends {second_line}");
+    info!("sending starting colour {starting_colour} to opponent wrapper");
+    writeln!(opponent_wrapper_stdin, "{starting_colour}")
+        .with_context(|| "Failed to write starting colour to opponent wrapper")?;
+
+    let player_turn = match starting_colour.trim() {
         "black" => Color::Black,
+        "random" | "white" => Color::White,
         x => {
             error!("User gave invalid turn: {x}");
             return Err(anyhow::anyhow!("User gave invalid turn: {x}"));
@@ -167,7 +208,7 @@ fn main() -> anyhow::Result<()> {
                 serial_comms_stdin.write_all(b"READ\n")?; 
                 while let Err(e) = serial_comms_stdout.read_exact(&mut ack_buf) {
                     // Request read until non-err
-                    eprintln!("{:#?}", e); 
+                    eprintln!("{e:#?}");
                     if e.kind() == ErrorKind::TimedOut { 
                         serial_comms_stdin.write_all(b"READ\n")?; 
                     } else {
@@ -248,7 +289,7 @@ fn steps_to_str(steps: Vec<Step>) -> String{
         let magnet = step.magnet.to_string();
         output = format!("{output} {x} {y} {magnet}");
     }
-    return output
+    output
 }
 
 fn rgb_to_str(rgb: RGB) -> String{
@@ -260,37 +301,37 @@ fn rgb_to_str(rgb: RGB) -> String{
     let bs = rgb.b;
     let bs2 =  format!("{bs:064b}");
     for ((r,g),b) in rs2.chars().zip(gs2.chars()).zip(bs2.chars()){
-        output.push_str(" ");
+        output.push(' ');
         match ((r,g),b) {
-            (('1','0'),'0') => output.push_str(&0xFF0000.to_string()),
-            (('0','1'),'0') => output.push_str(&0x008000.to_string()),
-            (('0','0'),'1') => output.push_str(&0x0000FF.to_string()),
-            (('1','1'),'0') => output.push_str(&0xFFFF00.to_string()),
-            (('1','0'),'1') => output.push_str(&0x800080.to_string()),
-            (('1','1'),'1') => output.push_str(&0xFFFFFF.to_string()),
-            (('0','1'),'1') => output.push_str(&0x40E0D0.to_string()),
-            (_,_) => output.push_str(&0x000000.to_string()),
+            (('1','0'),'0') => output.push_str(&0x00FF_0000.to_string()),
+            (('0','1'),'0') => output.push_str(&0x0000_8000.to_string()),
+            (('0','0'),'1') => output.push_str(&0x0000_00FF.to_string()),
+            (('1','1'),'0') => output.push_str(&0x00FF_FF00.to_string()),
+            (('1','0'),'1') => output.push_str(&0x0080_0080.to_string()),
+            (('1','1'),'1') => output.push_str(&0x00FF_FFFF.to_string()),
+            (('0','1'),'1') => output.push_str(&0x0040_E0D0.to_string()),
+            (_,_) => output.push_str(&0x0000_0000.to_string()),
         }
     }
-    return output;
+    output
 }
 
 fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32>{
     let mut difference = prev.toggled(Bitboard(current));
     let mut changed = difference.first();
     let mut output: Vec<u32> =Vec::new();
-    while(changed != None){
-        output.push(square_to_number(changed.unwrap()));
-        difference = difference.without(Bitboard::from_square(changed.unwrap()));
+    while let Some(change) = changed {
+        output.push(square_to_number(change));
+        difference = difference.without(Bitboard::from_square(change));
         changed = difference.first();
     }
-    return output;
+    output
 }
 //18446462598732902399
 //18446462598733955071
 
 fn square_to_number(square: Square) -> u32{
-    return (((rank_to_float(square.rank())-1.0) * 8.0 + file_to_float(square.file())-1.0) as u32)
+    ((rank_to_float(square.rank())-1.0) * 8.0 + file_to_float(square.file())-1.0) as u32
 }
 
 #[allow(clippy::too_many_lines)]
