@@ -94,7 +94,11 @@ void setup() {
     magnet_setup();
     core_xy_setup();
     // test_limit_sw();
+<<<<<<< HEAD
     // calibration();
+=======
+    calibration();
+>>>>>>> bir
     move_to(Position { 0, 0 }, HIGH_SPD);
     // move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
     set_all_LED(CRGB::Teal);
@@ -106,15 +110,21 @@ void loop() {
     BoardPosition pos;
     if (Serial.available()) {
         String command = Serial.readStringUntil('\n');
+<<<<<<< HEAD
 
         // [FIX-COMM]
         // if (read_op_from_serial() == OpKind::READ_SENSOR) {
+=======
+>>>>>>> bir
         if (command == "move") {
             Serial.println("Enter move control, input x and y to move");
             while (!Serial.available()) {
                 delay(10);
             }
+<<<<<<< HEAD
             
+=======
+>>>>>>> bir
             pos.x = Serial.parseFloat();
             Serial.print("x: ");
             Serial.println(pos.x);
@@ -149,7 +159,11 @@ void loop() {
             }
         } else if (command == "end") {
             Serial.println("End");
+<<<<<<< HEAD
             Serial.flush(); 
+=======
+            delay(100);
+>>>>>>> bir
             exit(0);
         } else {
             Serial.println("Invalid command");
