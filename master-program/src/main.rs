@@ -1,9 +1,21 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(dead_code)]
 
+extern crate tokio; 
+
 use anyhow::Context;
+<<<<<<< HEAD
 use log::{error, info, warn};
 use shakmaty::{san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role, Square};
+=======
+use log::{info, error};
+use shakmaty::{
+    san::San, Bitboard, Chess, Color, File, Move, Position, Rank, Role,
+    Square,
+};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::io::{BufReader, BufRead, Read, ErrorKind};
+>>>>>>> rubberhead-experimental
 use std::io::Write;
 use std::io::{BufRead, BufReader, ErrorKind, Read};
 
@@ -34,12 +46,18 @@ const PYTHON_INTERPRETER_PATH: &str = "python3";
 // 11. GOTO 3 UNTIL GAME ENDS
 // 12. EXIT
 
+<<<<<<< HEAD
 #[allow(
     clippy::unnecessary_wraps,
     clippy::too_many_lines,
     clippy::cognitive_complexity
 )]
 fn main() -> anyhow::Result<()> {
+=======
+#[tokio::main]
+#[allow(clippy::unnecessary_wraps, clippy::too_many_lines)]
+async fn main() -> anyhow::Result<()> {
+>>>>>>> rubberhead-experimental
     env_logger::init();
     // STEP 1: SETUP BOARD
     let mut pos = Chess::default();
@@ -48,7 +66,7 @@ fn main() -> anyhow::Result<()> {
     info!("Entered starting position: {fen}", fen = pos.board());
 
     // Setup serial connection to Arduino
-    let mut serial_comms_proc = std::process::Command::new(SERIAL_COMMS_EXE_PATH)
+    let mut serial_comms_proc = tokio::process::Command::new(SERIAL_COMMS_EXE_PATH)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
@@ -58,6 +76,7 @@ fn main() -> anyhow::Result<()> {
     let mut serial_comms_stdin = serial_comms_proc
         .stdin
         .take()
+<<<<<<< HEAD
         .with_context(|| "Failed to get stdin from created serial-communicator process")?;
     let mut serial_comms_stdout = BufReader::new(
         serial_comms_proc
@@ -65,6 +84,13 @@ fn main() -> anyhow::Result<()> {
             .take()
             .with_context(|| "Failed to get stdout from created serial-communicator process")?,
     );
+=======
+        .with_context(|| "Failed to get stdin from created serial-communicator process")?; 
+    let mut serial_comms_stdout = serial_comms_proc
+        .stdout
+        .take() 
+        .with_context(|| "Failed to get stdout from created serial-communicator process")?; 
+>>>>>>> rubberhead-experimental
 
     // STEP 2: SETUP GAME PARAMETERS
     let mut opponent_wrapper_proc = std::process::Command::new(OPPONENT_WRAPPER_EXE_PATH)
@@ -162,7 +188,8 @@ fn main() -> anyhow::Result<()> {
     let mut recv_line = || stdout_lines.next().unwrap().unwrap();
 
     // std::thread::sleep(std::time::Duration::from_secs(5));
-
+    //UPDATE THIS AFTER ENEMY MOVEMENT TOO
+    let mut prev_bitset: Bitboard = Bitboard(0xffff_0000_0000_ffff);
     // Right now the program is set to loop through the input from the reed switches ONLY
     'game_loop: loop {
         if let Some(outcome) = pos.outcome() {
@@ -171,12 +198,12 @@ fn main() -> anyhow::Result<()> {
             break 'game_loop;
         }
         if pos.turn() == player_turn {
-            let mut prev_bitset: Bitboard = Bitboard(0xffff_0000_0000_ffff);
             loop {
                 // STEP 3: READ REED-SWITCH OUTPUT
                 let newstate = state;
 
                 // This is input from REED SWITCHES
+<<<<<<< HEAD
                 // let reed_bitset: u64;
                 let mut buf: [u8; 8] = [0; 8];
                 let mut user_input_2 = String::new();
@@ -195,18 +222,66 @@ fn main() -> anyhow::Result<()> {
                 // eprintln!("[STEP 3] {:x?}", buf);
                 let reed_bitset = u64::from_le_bytes(buf);
                 // eprintln!("[STEP 3] {:x}", reed_bitset);
+=======
+                // let reed_bitset: u64; 
+                let mut buf: [u8; 8] = [0; 8]; 
+                let mut user_input_2 = String::new(); 
+                
+                // Send to serial, wait on its stdout
+                serial_comms_stdin.write_all(b"WRITE SENSOR\n").await?; 
+                eprintln!("sent request");
+                serial_comms_stdout.read_exact(&mut buf).await?;
+
+                // eprintln!("[STEP 3] {:x?}", buf); 
+                let reed_bitset = u64::from_le_bytes(buf);
+                eprintln!("[STEP 3] {:x}", reed_bitset); 
+>>>>>>> rubberhead-experimental
 
                 let mv;
                 //IMPORTANT: Right now it's only taking the first changed square, update so it loops over them
                 let actual_instruction = get_changed_square_number(prev_bitset, reed_bitset)[0];
                 prev_bitset = Bitboard(reed_bitset);
-                // eprintln!("[STEP 3] actual_instruction: {}", actual_instruction);
+                eprintln!("[STEP 3] actual_instruction: {}", actual_instruction);
                 (state, mv) = update_state(&pos, actual_instruction, newstate);
+                if state == State::Error {
+                    let desired = pos.board().occupied();
+                    while (desired != prev_bitset){
+                        let wrong_positions_rgb = RGB{
+                            r: desired.toggled(prev_bitset),
+                            g: Bitboard::EMPTY,
+                            b: Bitboard::EMPTY,
+                        };
+                        let mut rgb_data = rgb_to_str(wrong_positions_rgb);
+                        rgb_data.push('\n');
+                        serial_comms_stdin.write_all(rgb_data.as_bytes()).await?;
+                
+                        let mut buf: [u8; 8] = [0; 8]; 
+                        eprintln!("please put the pieces back in the correct position and enter input to confirm");
+                        std::io::stdin().read_line(&mut user_input).unwrap();
+                
+                        serial_comms_stdin.write_all(b"WRITE SENSOR\n").await?; 
+                        eprintln!("sent request");
+                        serial_comms_stdout.read_exact(&mut buf).await?;
+                        //std::thread::sleep(std::time::Duration::from_secs(1));
+                        // serial_comms_stdin.write_all(b"READ\n")?; 
+                        // [TODO] Refactor to async-await
+                        // while let Err(e) = serial_comms_stdout.read_exact(&mut buf) {
+                        //     eprintln!("[STEP 3] 
+                            
+                        //     Waiting on serial_comms_stdout"); 
+                        // }
+                        // let reed_bitset = u64::from_le_bytes(buf);
+                        eprintln!("[STEP 3] {:x}", reed_bitset);
+                        prev_bitset = Bitboard(reed_bitset);
+                    }
+                    state = State::Idle;
+                }
                 let copied_pos = pos.clone();
 
                 //===================================
                 //LED sending here
                 //===================================
+<<<<<<< HEAD
                 let rgb_data = rgb_to_str(get_rgb(&pos, state));
                 // eprintln!("sending led data \"{rgb_data}\" to serializer");
                 //>>> LED data
@@ -230,6 +305,16 @@ fn main() -> anyhow::Result<()> {
                 //     }
                 // }
                 // eprintln!("at here");
+=======
+                let mut rgb_data = rgb_to_str(get_rgb(&pos, state));
+                rgb_data.push('\n'); 
+
+                let mut ack_buf = [0u8]; 
+                //>>> LED data
+                serial_comms_stdin.write_all(rgb_data.as_bytes()).await?; 
+                //<<< Acknowledgement
+                serial_comms_stdout.read_exact(&mut ack_buf).await?; 
+>>>>>>> rubberhead-experimental
 
                 if let Some(mv) = mv {
                     info!("got full move, playing {mv}");
@@ -252,6 +337,7 @@ fn main() -> anyhow::Result<()> {
             info!("got move {mv} from opponent wrapper");
             pos = pos.play(&mv).unwrap();
             print_board_from_fen(&pos.board().to_string());
+            prev_bitset = pos.board().occupied();
 
             // STEP 9: CONVERT MOVE TO MOVEMENT STEPS
 
@@ -263,8 +349,9 @@ fn main() -> anyhow::Result<()> {
             );
             info!("produced steps: {steps:?}", steps = steps);
 
-            let step_data = steps_to_str(steps);
+            let mut step_data = steps_to_str(steps);
             eprintln!("sending step data {step_data} to serializer");
+<<<<<<< HEAD
             //>>> step data
             writeln!(serial_comms_stdin, "{step_data}").unwrap();
             //<<< step complete
@@ -281,6 +368,15 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             }
+=======
+            step_data.push('\n'); 
+
+            let mut ack_buf = [0u8]; 
+            //>>> step data
+            serial_comms_stdin.write_all(step_data.as_bytes()).await?; 
+            //<<< step complete
+            serial_comms_stdout.read_exact(&mut ack_buf).await?; 
+>>>>>>> rubberhead-experimental
         }
     }
 
@@ -339,10 +435,17 @@ fn rgb_to_str(rgb: RGB) -> String {
 fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32> {
     let mut difference = prev.toggled(Bitboard(current));
     let mut changed = difference.first();
+<<<<<<< HEAD
     let mut output: Vec<u32> = Vec::new();
     while let Some(change) = changed {
         output.push(square_to_number(change));
         difference = difference.without(Bitboard::from_square(change));
+=======
+    let mut output: Vec<u32> =Vec::new();
+    while changed != None{
+        output.push(square_to_number(changed.unwrap()));
+        difference = difference.without(Bitboard::from_square(changed.unwrap()));
+>>>>>>> rubberhead-experimental
         changed = difference.first();
     }
     output
@@ -350,9 +453,14 @@ fn get_changed_square_number(prev: Bitboard, current: u64) -> Vec<u32> {
 //18446462598732902399
 //18446462598733955071
 
+<<<<<<< HEAD
 fn square_to_number(square: Square) -> u32 {
     #![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     ((rank_to_float(square.rank()) - 1.0).mul_add(8.0, file_to_float(square.file())) - 1.0) as u32
+=======
+fn square_to_number(square: Square) -> u32{
+    return ((rank_to_float(square.rank())-1.0) * 8.0 + file_to_float(square.file())-1.0) as u32
+>>>>>>> rubberhead-experimental
 }
 
 #[allow(clippy::too_many_lines)]
@@ -768,7 +876,7 @@ fn print_board_from_fen(fen: &str) {
         }
     }
     output.push_str(ENDLINES[0]);
-    println!("{output}");
+    eprintln!("{output}");
 }
 
 fn print_bitboard(bitboard: Bitboard) {
