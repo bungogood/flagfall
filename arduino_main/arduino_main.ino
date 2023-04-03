@@ -1,8 +1,12 @@
 #include <FastLED.h>
+<<<<<<< HEAD
 #include "lib/communication.hpp"
 
 // ===================== Serial-comm Configuration =====================
 bool volatile handshake_flag = false; 
+=======
+#include "communication.hpp"
+>>>>>>> bir
 
 // ====================== LED Configuration ======================
 #define LED_PIN 2
@@ -21,17 +25,19 @@ bool rsw_state[8][8] = { 0 };
 // ====================== CoreXY Configuration ======================
 /* 
 *  CoreXY Layout
-*   .---------.
+*   o=========o
 *   |         |
 *   |         |
 *   |[O]======|
 *  [M1]-----[M2]
 */
-#define HIGH_SPD 1000 
+
+// 1/32 microstepping, 6400 steps per revolution
+#define HIGH_SPD 1000
 #define LOW_SPD  200
 #define CALI_SPD 1500
 #define SPD_TO_INTERVAL(spd) (int) 10000 / spd
-#define MM_TO_STEPS(mm) (long) mm * 159
+#define MM_TO_STEPS(mm) (long) mm * 161 // 161 steps per mm at 1/32 microstepping
 
 #define UP         0
 #define DOWN       1
@@ -52,19 +58,27 @@ typedef struct StepperMotor {
 
 StepperMotor M1 = { 4, 5, 12 }, M2 = { 7, 6, 8 };
 
-// Stepper Motor State
+// Position relative to the bottom left corner of the board in mm
 typedef struct Position {
     int x;
     int y;
 } Position;
-
+// Global variable to store the current position
 Position current_pos = { -1, -1 };
+// Max and Min Position can be reached to protect the motor
 const int MAX_X = 500;
 const int MAX_Y = 560;
 const int MIN_X = 0;
 const int MIN_Y = 0;
-const int OFFSET_X = 7;
-const int OFFSET_Y = 5;
+// Offset: Distance in mm from the botton left corner 
+// of the board to the calibration point
+const int OFFSET_X = 8; 
+const int OFFSET_Y = 35;
+// Position on the 8x8 chess board
+typedef struct BoardPosition {
+    float x;
+    float y;
+} BoardPosition;
 
 // ====================== Electromagnet Configuration ======================
 #define ELECTROMAGNET_PIN 3
@@ -73,13 +87,10 @@ const int OFFSET_Y = 5;
 
 // ====================== Main Program ======================
 
-typedef struct BoardPosition {
-    float x;
-    float y;
-} BoardPosition;
 
 void setup() {
     Serial.begin(115200);
+<<<<<<< HEAD
     /* [comm] handshake */
     while (!handshake_flag) {
         handshake_flag = handshake(); 
@@ -88,11 +99,14 @@ void setup() {
             break; 
         }
     }
+=======
+>>>>>>> bir
 
     LED_setup(16);
     rsw_setup();
     magnet_setup();
     core_xy_setup();
+<<<<<<< HEAD
     // test_limit_sw();
 <<<<<<< HEAD
     // calibration();
@@ -101,12 +115,141 @@ void setup() {
 >>>>>>> bir
     move_to(Position { 0, 0 }, HIGH_SPD);
     // move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
+=======
+>>>>>>> bir
     set_all_LED(CRGB::Teal);
-    rsw_LED_update(CRGB::Purple);
     FastLED.show();
+
+    // test_limit_sw(); // Uncomment to test the limit switch before calibration
+
+    calibration();
+    move_to_board_position(BoardPosition { 1, 1 }, HIGH_SPD);
+
 }
 
+
+uint8_t buffer[512];
+
+// void loop() {
+//     serial_input_demo();
+//     // rsw_LED_demo();
+// }
+
 void loop() {
+    if (Serial.available()) {
+        size_t read_amnt = Serial.readBytes(buffer, 512);
+        Operation op(buffer, read_amnt);
+
+        if (op.kind == OpKind::Sensor) {
+            // Serial.println("Sensor");
+        
+            rsw_state_update();
+            uint64_t rsw_data;
+            uint64_t prev_rsw_data = rsw_state_to_uint64();
+
+            // uint64_t original_rsw_data = rsw_state_to_uint64();; // Record the original reading
+
+            bool change_registered = false;
+
+            while (!change_registered) {
+                // update the current reading
+                rsw_state_update();
+                rsw_data = rsw_state_to_uint64();
+                // check if the reading has changed
+                if (rsw_data != prev_rsw_data) {
+                    // Serial.println("Change Detected");
+                    change_registered = true;
+                    prev_rsw_data = rsw_data;
+                    // check if the next 9 readings are the same
+                    for (int i = 0; i < 9; i++) {
+                        rsw_state_update();
+                        rsw_data = rsw_state_to_uint64();
+                        if (rsw_data != prev_rsw_data) {
+                            change_registered = false;
+                            break;
+                        }
+                    }
+                }
+                // update the previous reading
+                prev_rsw_data = rsw_data;
+            }
+            // print_uint64_t(rsw_data); // For Debugging, Please comment out
+            write_sensor_data(rsw_data);
+
+        } else if (op.kind == OpKind::Magnet) {
+            // CoreXY Movement
+            BoardPosition board_pos;
+            const uint8_t *curr_ptr = op.data;
+            // Move the magnet until the end of the data
+            while (curr_ptr < op.data + op.data_len()) {
+                // Read in a block of data
+                float x = *(float *) curr_ptr;
+                curr_ptr += 4;
+                float y = *(float *) curr_ptr; 
+                curr_ptr += 4;
+                bool magnet = (*curr_ptr) != 0;
+                curr_ptr += 1;
+
+                if (magnet) {
+                    magnet_on();
+                } else {
+                    magnet_off();
+                }
+
+                // Conver the read position to a board position
+                board_pos = rotate(BoardPosition { x, y }, BoardPosition { 4.5, 4.5 });
+                // Make move
+                move_to_board_position(board_pos, HIGH_SPD);
+
+                delay(100); // Optional delay
+            }
+            magnet_off();
+            write_ack();
+
+        } else if (op.kind == OpKind::Led) {
+            write_ack();
+            size_t row = 1; 
+            size_t col = 1;
+            for (auto data_ptr = op.data; data_ptr < op.data + op.data_len(); data_ptr += 3) {
+                // Read the data from ptr, rotate it, and write it to the LED matrix
+                set_LED_xy(9 - row, col, bytes_to_crgb(data_ptr));
+                // Keep track of the current row and column
+                col++; 
+                if (col == 9) { 
+                    col = 1; 
+                    row++; 
+                }
+            }
+            // Display the LED matrix
+            FastLED.show();
+            // Send the Acknowledgement Code
+            // write_ack();
+        }
+    }
+}
+
+
+CRGB bytes_to_crgb(const uint8_t* base) {
+    return CRGB(base[0], base[1], base[2]); 
+}
+
+size_t write_sensor_data(const uint64_t &value) {
+    Serial.write((uint8_t *) &value, sizeof(value));
+}
+
+uint8_t msb(uint64_t num) {
+    uint8_t msb = 0;
+    while (num >>= 1) {
+        msb++;
+    }
+    return msb;
+}
+
+
+// ====================== General Helper Functions ======================
+
+void serial_input_demo() {
+
     BoardPosition pos;
     if (Serial.available()) {
         String command = Serial.readStringUntil('\n');
@@ -134,16 +277,18 @@ void loop() {
             pos.y = Serial.parseFloat();
             Serial.print("y: ");
             Serial.println(pos.y);
-            BoardPosition pos2 = rotate_cw(pos, BoardPosition {4.5, 4.5});
+            BoardPosition pos2 = rotate(pos, BoardPosition {4.5, 4.5});
             Serial.print(pos2.x);
             Serial.print(" ");
             Serial.println(pos2.y);
-            move_to_board_position(pos2, LOW_SPD);
+            move_to_board_position(pos2, HIGH_SPD);
             clear_LED();
             set_all_LED(CRGB::Teal);
             rsw_LED_update(CRGB::Purple);
-            set_LED_xy(pos2.x, pos2.y, CRGB::Gold);
+            rsw_state_display();
+            set_LED_xy(pos2.x, pos2.y , CRGB::Gold);
             FastLED.show();
+
         } else if (command == "magnet") {
             Serial.println("Enter magnet control, 1 for on, 0 for off:");
             while (!Serial.available()) {
@@ -157,6 +302,7 @@ void loop() {
                 Serial.println("off");
                 magnet_off();
             }
+
         } else if (command == "end") {
             Serial.println("End");
 <<<<<<< HEAD
@@ -165,11 +311,19 @@ void loop() {
             delay(100);
 >>>>>>> bir
             exit(0);
+
         } else {
             Serial.println("Invalid command");
         }
     }
+}
 
+void rsw_LED_demo() {
+    rsw_state_update();
+    rsw_state_display();
+    set_all_LED(CRGB::Teal);
+    rsw_LED_update(CRGB::Purple);
+    FastLED.show();
 }
 
 void rsw_LED_update(CRGB color) {
@@ -203,19 +357,22 @@ void filp_row(bool matrix[8][8], bool result[8][8]) {
     }
 }
 
-BoardPosition rotate_ccw(BoardPosition vec, BoardPosition center) {
-    BoardPosition result;
-    result.x = center.x - (vec.y - center.y);
-    result.y = center.y + (vec.x - center.x);
-    return result;
-}
-
-BoardPosition rotate_cw(BoardPosition vec, BoardPosition center) {
+BoardPosition rotate(BoardPosition vec, BoardPosition center) {
     BoardPosition result;
     result.x = center.x + (vec.y - center.y);
     result.y = center.y - (vec.x - center.x);
     return result;
 }
+
+
+
+void print_uint64_t(uint64_t value) {
+    // Print the value bit by bit
+    for (int i = 63; i >= 0; i--) {
+        Serial.print((value & (1ULL << i)) ? "1" : "0");
+    }
+}
+
 
 
 
@@ -242,12 +399,13 @@ void LED_setup(int brightness) {
 * @param y: Column number [1 - 8]
 */ 
 void set_LED_xy(int row, int col, CRGB color) {
-    row--;
-    col--;
-    if (col % 2 == 0) {
-        row = 7 - row;
+
+    int r = row - 1;
+    int c = col - 1;
+    if (c % 2 == 0) {
+        r = 7 - r;
     }
-    leds[(col * 8) + row] = color;
+    leds[(c * 8) + r] = color;
 }
 
 /*
@@ -332,6 +490,20 @@ void rsw_row_state_display(size_t row) {
     // Serial.println(); 
 }
 
+uint64_t rsw_state_to_uint64() {
+    uint64_t result = 0;
+    int count = 0;
+    for (int j = 0; j < 8; j++) {
+        for (int i = 0; i < 8; i++) {
+            if (rsw_state[i][j]) {
+                result |= (uint64_t)1 << count;
+            }
+            count++;
+        }
+    }
+    return result;
+}
+
 // =================== Stepper Motor Functions ===================
 
 void test_limit_sw() {
@@ -371,7 +543,7 @@ void core_xy_setup() {
 * Calibrate the gantry to the left down corner.
 */
 void calibration() {
-    Serial.println("CALIBRATING...");
+    // Serial.println("CALIBRATING...");
     // Disable M2 so that it is not locked
     digitalWrite(M2.DISABLE_PIN, HIGH);
     // Enable M1 to rotate
@@ -408,13 +580,13 @@ void calibration() {
 }
 
 void move_to_board_position(BoardPosition board_pos, int speed) {
-    if (board_pos.x == 0 || board_pos.y == 0) {
-        Serial.println("0, 0 not reachable!");
+    if (board_pos.x == 0 && board_pos.y == 0) { // TODO:
+        // Serial.println("0, 0 not reachable!");
         return;
     }
     Position target_pos;
     target_pos.x = -25 + (int) (board_pos.x * 50);
-    target_pos.y = -25 + (int) (board_pos.y * 50);
+    target_pos.y = 25 + (int) (board_pos.y * 50);
     move_to(target_pos, speed);
 }
 
@@ -429,16 +601,16 @@ void move_to_board_position(BoardPosition board_pos, int speed) {
 */
 void move_to(Position target_pos, int speed) {
     // Print start position
-    Serial.print("[ ");
-    Serial.print(current_pos.x);
-    Serial.print(", ");
-    Serial.print(current_pos.y);
-    Serial.print(" ]");
+    // Serial.print("[ ");
+    // Serial.print(current_pos.x);
+    // Serial.print(", ");
+    // Serial.print(current_pos.y);
+    // Serial.print(" ]");
 
     // Check if the target position is valid
     if (target_pos.x < MIN_X || target_pos.x > MAX_X || 
         target_pos.y < MIN_Y || target_pos.y > MAX_Y) {
-        Serial.println("Invalid target position");
+        // Serial.println("Invalid target position");
         return;
     }
     // Calibrate if not calibrated yet
@@ -478,11 +650,11 @@ void move_to(Position target_pos, int speed) {
     current_pos.y = target_pos.y;
 
     // Print the end position
-    Serial.print("\t-->    [ ");
-    Serial.print(current_pos.x);
-    Serial.print(", ");
-    Serial.print(current_pos.y);
-    Serial.println(" ]");
+    // Serial.print("\t-->    [ ");
+    // Serial.print(current_pos.x);
+    // Serial.print(", ");
+    // Serial.print(current_pos.y);
+    // Serial.println(" ]");
 
 }
 
